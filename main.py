@@ -12,7 +12,7 @@ from gatet import brn6
 
 # ====== CONFIGURATION ======
 TOKEN = "8208227896:AAFWdtIwr6l8tyCz3Bs_mBMDTJmdXFgqpiY"  # Apna bot token daalo
-ADMIN_ID = 6176865951
+ADMIN_ID = 6838940621
 DATA_FILE = "data.json"
 COMBO_FILE = "combo.txt"
 
