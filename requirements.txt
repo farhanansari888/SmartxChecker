@@ -3,3 +3,4 @@ pyTelegramBotAPI==4.14.0
 requests
 beautifulsoup4
 fake-useragent
+gunicorn
