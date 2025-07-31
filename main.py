@@ -7,8 +7,11 @@ import threading
 from datetime import datetime, timedelta
 from flask import Flask, request
 import telebot
-from telebot import types
+from telebot import types, apihelper
 from gatet import *
+
+# Enable middleware for Flask + Telebot
+apihelper.ENABLE_MIDDLEWARE = True
 
 # Flask init
 app = Flask(__name__)
@@ -223,6 +226,7 @@ def stop_check(call):
 # --- Webhook Route ---
 @app.route('/webhook', methods=['POST'])
 def webhook():
+    print("Update received")  # DEBUG
     json_str = request.get_data(as_text=True)
     update = telebot.types.Update.de_json(json_str)
     bot.process_new_updates([update])
