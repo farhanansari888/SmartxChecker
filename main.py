@@ -3,237 +3,159 @@ import json
 import time
 import random
 import string
-import threading
 from datetime import datetime, timedelta
 from flask import Flask, request
-import telebot
-from telebot import types, apihelper
-from gatet import *
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 
-# Middleware enable
-apihelper.ENABLE_MIDDLEWARE = True
+from gatet import brn6
 
-# Flask init
-app = Flask(__name__)
-
-# Telegram bot init
+# --- Config ---
 TOKEN = os.getenv("BOT_TOKEN")
-bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
-
-stopuser = {}
-admin = 6838940621  # Change to your admin ID
+ADMIN_ID = 6838940621
+DATA_FILE = "data.json"
 
 # Ensure data.json exists
-if not os.path.exists("data.json"):
-    with open("data.json", "w") as f:
+if not os.path.exists(DATA_FILE):
+    with open(DATA_FILE, "w") as f:
         json.dump({}, f)
 
-# ---------------- DEBUG LOG ----------------
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    json_str = request.get_data(as_text=True)
-    print(f"\n=== RAW UPDATE ===\n{json_str}\n=================\n")
-    update = telebot.types.Update.de_json(json_str)
-    bot.process_new_updates([update])
-    return '', 200
+# Flask App
+app = Flask(__name__)
 
-@app.route('/')
+# PTB Application
+application = Application.builder().token(TOKEN).build()
+
+# --- Helpers ---
+def load_data():
+    with open(DATA_FILE, "r") as f:
+        return json.load(f)
+
+def save_data(data):
+    with open(DATA_FILE, "w") as f:
+        json.dump(data, f, indent=4)
+
+# --- Commands ---
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.effective_user.id)
+    name = update.effective_user.first_name
+
+    data = load_data()
+    if user_id not in data:
+        data[user_id] = {"plan": "𝗙𝗥𝗘𝗘", "timer": "none"}
+        save_data(data)
+
+    plan = data[user_id]["plan"]
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("✨ 𝗝𝗢𝗜𝗡 ✨", url="https://t.me/smartxchecker")]])
+    await update.message.reply_html(f"HELLO {name}\nYou are on {plan} plan.", reply_markup=keyboard)
+
+async def cmds(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    data = load_data()
+    plan = data.get(str(update.effective_user.id), {}).get("plan", "𝗙𝗥𝗘𝗘")
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(f"✨ {plan} ✨", callback_data="plan")]])
+    await update.message.reply_html("<b>Commands:\n\n✅ STRIPE AUTH: upload file\n/redeem <key>\n/code <hours> (admin)</b>", reply_markup=keyboard)
+
+# --- File Upload ---
+async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.effective_user.id)
+    data = load_data()
+
+    plan = data.get(user_id, {}).get("plan", "𝗙𝗥𝗘𝗘")
+    if plan == "𝗙𝗥𝗘𝗘":
+        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("✨ 𝗢𝗪𝗡𝗘𝗥 ✨", url="https://t.me/smartxhacker")]])
+        await update.message.reply_html("<b>Upgrade to VIP to use file checking feature.</b>", reply_markup=keyboard)
+        return
+
+    file = await update.message.document.get_file()
+    await file.download_to_drive("combo.txt")
+
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🏴‍☠️ Stripe Auth ♻️", callback_data='b6')]])
+    await update.message.reply_text("Choose gateway to use:", reply_markup=keyboard)
+
+# --- Callback for Stripe ---
+async def stripe_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    with open("combo.txt", "r") as f:
+        cards = f.readlines()
+
+    live = 0
+    dd = 0
+    for cc in cards:
+        result = brn6(cc)
+        if "Approved" in result:
+            live += 1
+            await context.bot.send_message(chat_id=query.from_user.id, text=f"<b>Card: {cc.strip()}\nStatus: {result}</b>", parse_mode="HTML")
+        else:
+            dd += 1
+        time.sleep(2)
+
+    await query.edit_message_text(f"COMPLETED ✅\nLIVE: {live} | DEAD: {dd}")
+
+# --- Redeem ---
+async def redeem(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        key = context.args[0]
+    except:
+        await update.message.reply_text("Usage: /redeem <key>")
+        return
+
+    data = load_data()
+    if key not in data:
+        await update.message.reply_text("Invalid or already redeemed key")
+        return
+
+    timer = data[key]['time']
+    plan = data[key]['plan']
+    data[str(update.effective_user.id)] = {"plan": plan, "timer": timer}
+    del data[key]
+    save_data(data)
+
+    await update.message.reply_html(f"<b>Key Redeemed ✅\nPlan: {plan}\nExpires: {timer}</b>")
+
+# --- Code Generation (Admin) ---
+async def gen_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+
+    try:
+        hours = float(context.args[0])
+    except:
+        await update.message.reply_text("Usage: /code <hours>")
+        return
+
+    expire_time = datetime.now() + timedelta(hours=hours)
+    expire_str = expire_time.strftime("%Y-%m-%d %H:%M")
+    key = 'moksha-' + '-'.join(''.join(random.choices(string.ascii_uppercase + string.digits, k=4)) for _ in range(3))
+
+    data = load_data()
+    data[key] = {"plan": "𝗩𝗜𝗣", "time": expire_str}
+    save_data(data)
+
+    await update.message.reply_html(f"<b>Key Created ✅\nPlan: VIP\nExpires: {expire_str}\nKey: /redeem {key}</b>")
+
+# --- Handlers ---
+application.add_handler(CommandHandler("start", start))
+application.add_handler(CommandHandler("cmds", cmds))
+application.add_handler(MessageHandler(filters.Document.ALL, handle_file))
+application.add_handler(CallbackQueryHandler(stripe_callback, pattern='b6'))
+application.add_handler(CommandHandler("redeem", redeem))
+application.add_handler(CommandHandler("code", gen_code))
+
+# --- Flask route for webhook ---
+@app.route(f"/webhook", methods=["POST"])
+def webhook():
+    update = Update.de_json(request.get_json(force=True), application.bot)
+    application.update_queue.put_nowait(update)
+    return "OK", 200
+
+@app.route("/")
 def index():
     return "Bot running via Flask Webhook!", 200
 
-# ---------------- START Command ----------------
-@bot.message_handler(commands=['start'])
-def start_cmd(message):
-    print("Start handler triggered")
-    name = message.from_user.first_name
-    user_id = str(message.from_user.id)
-
-    # Load or initialize user data
-    with open("data.json", "r") as file:
-        data = json.load(file)
-
-    if user_id not in data:
-        data[user_id] = {"plan": "𝗙𝗥𝗘𝗘", "timer": "none"}
-        with open("data.json", "w") as file:
-            json.dump(data, file, indent=4)
-
-    plan = data[user_id]["plan"]
-
-    # Send welcome
-    keyboard = types.InlineKeyboardMarkup()
-    button = types.InlineKeyboardButton(text="✨ 𝗝𝗢𝗜𝗡 ✨", url="https://t.me/smartxchecker")
-    keyboard.add(button)
-    bot.send_message(message.chat.id, f"<b>HELLO {name}\nYou are on {plan} plan.</b>", reply_markup=keyboard)
-
-# ---------------- CMDS Command ----------------
-@bot.message_handler(commands=['cmds'])
-def cmds(message):
-    with open("data.json", "r") as file:
-        data = json.load(file)
-    plan = data.get(str(message.from_user.id), {}).get("plan", "𝗙𝗥𝗘𝗘")
-
-    keyboard = types.InlineKeyboardMarkup()
-    btn = types.InlineKeyboardButton(text=f"✨ {plan} ✨", callback_data='plan')
-    keyboard.add(btn)
-
-    bot.send_message(
-        chat_id=message.chat.id,
-        text=f"<b>Commands:\n\n✅ STRIPE AUTH: /st (file upload required)\n\nMore tools soon!</b>",
-        reply_markup=keyboard
-    )
-
-# ---------------- PING TEST ----------------
-@bot.message_handler(commands=['ping'])
-def ping_cmd(message):
-    bot.send_message(message.chat.id, "Pong!")
-
-
-# ---------------- FILE UPLOAD ----------------
-@bot.message_handler(content_types=["document"])
-def handle_file(message):
-    user_id = str(message.from_user.id)
-    with open("data.json", "r") as file:
-        data = json.load(file)
-    plan = data.get(user_id, {}).get("plan", "𝗙𝗥𝗘𝗘")
-
-    if plan == "𝗙𝗥𝗘𝗘":
-        keyboard = types.InlineKeyboardMarkup()
-        btn = types.InlineKeyboardButton(text="✨ 𝗢𝗪𝗡𝗘𝗥 ✨", url="https://t.me/smartxhacker")
-        keyboard.add(btn)
-        bot.send_message(message.chat.id, "<b>Upgrade to VIP to use file checking feature.</b>", reply_markup=keyboard)
-        return
-
-    file_info = bot.get_file(message.document.file_id)
-    file_data = bot.download_file(file_info.file_path)
-    with open("combo.txt", "wb") as f:
-        f.write(file_data)
-
-    keyboard = types.InlineKeyboardMarkup()
-    button = types.InlineKeyboardButton(text="🏴‍☠️ Stripe Auth ♻️", callback_data='b6')
-    keyboard.add(button)
-    bot.reply_to(message, "Choose gateway to use:", reply_markup=keyboard)
-
-# ---------------- STRIPE AUTH CHECKER ----------------
-@bot.callback_query_handler(func=lambda call: call.data == 'b6')
-def stripe_auth(call):
-    def process_cards():
-        user_id = call.from_user.id
-        gate = 'Stripe Auth'
-        dd = live = 0
-
-        bot.edit_message_text(
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            text="Checking your cards...⌛"
-        )
-
-        with open("combo.txt", "r") as file:
-            cards = file.readlines()
-
-        total = len(cards)
-        stopuser[str(user_id)] = {"status": "start"}
-
-        for cc in cards:
-            if stopuser[str(user_id)]["status"] == "stop":
-                bot.edit_message_text(
-                    chat_id=call.message.chat.id,
-                    message_id=call.message.message_id,
-                    text='STOPPED ✅\nBOT BY ➜ @smartxhacker'
-                )
-                return
-
-            start_time = time.time()
-            try:
-                result = str(brn6(cc))
-            except:
-                result = "ERROR"
-
-            msg = f"""<b>Card ➼ <code>{cc.strip()}</code>
-Status ➼ {result}
-Gateway ➼ {gate}
-Time ➼ {"{:.1f}".format(time.time()-start_time)}s
-BOT BY: @smartxhacker</b>"""
-
-            if "Approved" in result or "succeeded" in result or "Duplicate" in result:
-                live += 1
-                bot.send_message(call.from_user.id, msg)
-            else:
-                dd += 1
-
-            time.sleep(3)
-
-        bot.edit_message_text(
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            text="COMPLETED ✅\nBOT BY ➜ @smartxhacker"
-        )
-
-    threading.Thread(target=process_cards).start()
-
-# ---------------- REDEEM COMMAND ----------------
-@bot.message_handler(func=lambda m: m.text.lower().startswith('.redeem') or m.text.lower().startswith('/redeem'))
-def redeem_key(message):
-    def process_redeem():
-        try:
-            key = message.text.split(' ')[1]
-            with open('data.json', 'r') as file:
-                data = json.load(file)
-
-            if key not in data:
-                bot.reply_to(message, "<b>Invalid or already redeemed key</b>", parse_mode="HTML")
-                return
-
-            timer = data[key]['time']
-            plan = data[key]['plan']
-
-            data[str(message.from_user.id)] = {"plan": plan, "timer": timer}
-            del data[key]
-
-            with open('data.json', 'w') as file:
-                json.dump(data, file, indent=4)
-
-            bot.reply_to(message, f"<b>Key Redeemed ✅\nPlan: {plan}\nExpires: {timer}</b>", parse_mode="HTML")
-        except:
-            bot.reply_to(message, "<b>Error redeeming key</b>", parse_mode="HTML")
-
-    threading.Thread(target=process_redeem).start()
-
-# ---------------- CODE GENERATE (ADMIN) ----------------
-@bot.message_handler(commands=['code'])
-def gen_code(message):
-    def process_code():
-        if message.from_user.id != admin:
-            return
-
-        try:
-            hours = float(message.text.split(' ')[1])
-        except:
-            bot.reply_to(message, "Usage: /code <hours>")
-            return
-
-        expire_time = datetime.now() + timedelta(hours=hours)
-        expire_str = expire_time.strftime("%Y-%m-%d %H:%M")
-
-        key = 'moksha-' + '-'.join(''.join(random.choices(string.ascii_uppercase + string.digits, k=4)) for _ in range(3))
-
-        with open("data.json", "r") as file:
-            data = json.load(file)
-        data[key] = {"plan": "𝗩𝗜𝗣", "time": expire_str}
-
-        with open("data.json", "w") as file:
-            json.dump(data, file, indent=4)
-
-        bot.reply_to(message, f"<b>Key Created ✅\nPlan: VIP\nExpires: {expire_str}\nKey: /redeem {key}</b>", parse_mode="HTML")
-
-    threading.Thread(target=process_code).start()
-
-# ---------------- STOP CALLBACK ----------------
-@bot.callback_query_handler(func=lambda call: call.data == 'stop')
-def stop_check(call):
-    stopuser[str(call.from_user.id)]["status"] = "stop"
-
-# ---------------- SET WEBHOOK ----------------
-url = os.getenv("RENDER_EXTERNAL_URL")
-if url:
-    bot.remove_webhook()
-    bot.set_webhook(url + '/webhook')
+# --- Set webhook at startup ---
+if os.getenv("RENDER_EXTERNAL_URL"):
+    import requests
+    url = os.getenv("RENDER_EXTERNAL_URL") + "/webhook"
+    requests.get(f"https://api.telegram.org/bot{TOKEN}/setWebhook?url={url}")
