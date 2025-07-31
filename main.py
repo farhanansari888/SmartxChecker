@@ -52,7 +52,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     plan = data[str(user.id)]["plan"]
 
-    keyboard = [[InlineKeyboardButton("✨ 𝗝𝗢𝗜𝗡 ✨", url="https://t.me/smartxchecker")]]
+    keyboard = [[InlineKeyboardButton("✨ 𝗝𝗢𝗜𝗡 ✨", url="https://t.me/smarttunnel")]]
     await update.message.reply_text(
         f"<b>HELLO {user.first_name}\nYou are on {plan} plan.</b>",
         reply_markup=InlineKeyboardMarkup(keyboard),
