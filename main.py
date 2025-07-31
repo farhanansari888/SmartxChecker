@@ -11,7 +11,7 @@ from flask import Flask  # For Render port binding
 from gatet import brn6  # Tumhare gateway ka function
 
 # ====== CONFIGURATION ======
-TOKEN = "YOUR_BOT_TOKEN"  # Apna bot token daalo
+TOKEN = "8208227896:AAFWdtIwr6l8tyCz3Bs_mBMDTJmdXFgqpiY"  # Apna bot token daalo
 ADMIN_ID = 6176865951
 DATA_FILE = "data.json"
 COMBO_FILE = "combo.txt"
