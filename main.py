@@ -1,121 +1,184 @@
-import os
 import json
-import time
+import os
 import random
 import string
+import asyncio
+import time
 from datetime import datetime, timedelta
-from flask import Flask, request
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
-
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    CallbackQueryHandler,
+    ContextTypes,
+    filters,
+)
 from gatet import brn6
 
-# --- Config ---
-TOKEN = os.getenv("BOT_TOKEN")
+# --- Global setup ---
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = 6838940621
 DATA_FILE = "data.json"
+COMBO_FILE = "combo.txt"
+stopuser = {}
 
 # Ensure data.json exists
 if not os.path.exists(DATA_FILE):
     with open(DATA_FILE, "w") as f:
         json.dump({}, f)
 
-# Flask App
-app = Flask(__name__)
 
-# PTB Application
-application = Application.builder().token(TOKEN).build()
-
-# --- Helpers ---
+# Utility: Load & save data
 def load_data():
     with open(DATA_FILE, "r") as f:
         return json.load(f)
+
 
 def save_data(data):
     with open(DATA_FILE, "w") as f:
         json.dump(data, f, indent=4)
 
-# --- Commands ---
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.effective_user.id)
-    name = update.effective_user.first_name
 
+# --- START Command ---
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
     data = load_data()
-    if user_id not in data:
-        data[user_id] = {"plan": "𝗙𝗥𝗘𝗘", "timer": "none"}
+    if str(user.id) not in data:
+        data[str(user.id)] = {"plan": "𝗙𝗥𝗘𝗘", "timer": "none"}
         save_data(data)
 
-    plan = data[user_id]["plan"]
-    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("✨ 𝗝𝗢𝗜𝗡 ✨", url="https://t.me/smartxchecker")]])
-    await update.message.reply_html(f"HELLO {name}\nYou are on {plan} plan.", reply_markup=keyboard)
+    plan = data[str(user.id)]["plan"]
 
+    keyboard = [
+        [InlineKeyboardButton("✨ 𝗝𝗢𝗜𝗡 ✨", url="https://t.me/smartxchecker")]
+    ]
+    await update.message.reply_text(
+        f"<b>HELLO {user.first_name}\nYou are on {plan} plan.</b>",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode="HTML",
+    )
+
+
+# --- CMDS Command ---
 async def cmds(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = load_data()
     plan = data.get(str(update.effective_user.id), {}).get("plan", "𝗙𝗥𝗘𝗘")
-    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(f"✨ {plan} ✨", callback_data="plan")]])
-    await update.message.reply_html("<b>Commands:\n\n✅ STRIPE AUTH: upload file\n/redeem <key>\n/code <hours> (admin)</b>", reply_markup=keyboard)
 
-# --- File Upload ---
+    keyboard = [[InlineKeyboardButton(f"✨ {plan} ✨", callback_data="plan")]]
+    await update.message.reply_text(
+        "<b>Commands:\n\n✅ STRIPE AUTH: upload file then select gateway\n\nMore tools soon!</b>",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode="HTML",
+    )
+
+
+# --- FILE UPLOAD ---
 async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     data = load_data()
-
     plan = data.get(user_id, {}).get("plan", "𝗙𝗥𝗘𝗘")
+
     if plan == "𝗙𝗥𝗘𝗘":
-        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("✨ 𝗢𝗪𝗡𝗘𝗥 ✨", url="https://t.me/smartxhacker")]])
-        await update.message.reply_html("<b>Upgrade to VIP to use file checking feature.</b>", reply_markup=keyboard)
+        keyboard = [
+            [InlineKeyboardButton("✨ 𝗢𝗪𝗡𝗘𝗥 ✨", url="https://t.me/smartxhacker")]
+        ]
+        await update.message.reply_text(
+            "<b>Upgrade to VIP to use file checking feature.</b>",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="HTML",
+        )
         return
 
-    file = await update.message.document.get_file()
-    await file.download_to_drive("combo.txt")
+    # Download file
+    file = await context.bot.get_file(update.message.document.file_id)
+    combo_data = await file.download_as_bytearray()
 
-    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🏴‍☠️ Stripe Auth ♻️", callback_data='b6')]])
-    await update.message.reply_text("Choose gateway to use:", reply_markup=keyboard)
+    with open(COMBO_FILE, "wb") as f:
+        f.write(combo_data)
 
-# --- Callback for Stripe ---
+    keyboard = [
+        [InlineKeyboardButton("🏴‍☠️ Stripe Auth ♻️", callback_data="b6")]
+    ]
+    await update.message.reply_text(
+        "Choose gateway to use:", reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+
+# --- Stripe Auth Handler ---
 async def stripe_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    with open("combo.txt", "r") as f:
+    user_id = str(query.from_user.id)
+    stopuser[user_id] = {"status": "start"}
+
+    # Read combo
+    with open(COMBO_FILE, "r") as f:
         cards = f.readlines()
 
-    live = 0
-    dd = 0
+    await query.edit_message_text("Checking your cards...⌛")
+
+    live, dead = 0, 0
     for cc in cards:
-        result = brn6(cc)
-        if "Approved" in result:
+        if stopuser[user_id]["status"] == "stop":
+            await query.edit_message_text("STOPPED ✅\nBOT BY ➜ @smartxhacker")
+            return
+
+        start_time = time.time()
+        try:
+            result = str(brn6(cc))
+        except Exception:
+            result = "ERROR"
+
+        msg = (
+            f"<b>Card ➼ <code>{cc.strip()}</code>\n"
+            f"Status ➼ {result}\n"
+            f"Gateway ➼ Stripe Auth\n"
+            f"Time ➼ {'{:.1f}'.format(time.time() - start_time)}s\n"
+            f"BOT BY: @smartxhacker</b>"
+        )
+
+        if "Approved" in result or "succeeded" in result or "Duplicate" in result:
             live += 1
-            await context.bot.send_message(chat_id=query.from_user.id, text=f"<b>Card: {cc.strip()}\nStatus: {result}</b>", parse_mode="HTML")
+            await context.bot.send_message(query.from_user.id, msg, parse_mode="HTML")
         else:
-            dd += 1
-        time.sleep(2)
+            dead += 1
 
-    await query.edit_message_text(f"COMPLETED ✅\nLIVE: {live} | DEAD: {dd}")
+        await asyncio.sleep(3)
 
-# --- Redeem ---
+    await query.edit_message_text("COMPLETED ✅\nBOT BY ➜ @smartxhacker")
+
+
+# --- Redeem Command ---
 async def redeem(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    data = load_data()
     try:
         key = context.args[0]
-    except:
-        await update.message.reply_text("Usage: /redeem <key>")
+    except IndexError:
+        await update.message.reply_text("<b>Usage: /redeem <key></b>", parse_mode="HTML")
         return
 
-    data = load_data()
     if key not in data:
-        await update.message.reply_text("Invalid or already redeemed key")
+        await update.message.reply_text(
+            "<b>Invalid or already redeemed key</b>", parse_mode="HTML"
+        )
         return
 
-    timer = data[key]['time']
-    plan = data[key]['plan']
+    timer = data[key]["time"]
+    plan = data[key]["plan"]
+
     data[str(update.effective_user.id)] = {"plan": plan, "timer": timer}
     del data[key]
     save_data(data)
 
-    await update.message.reply_html(f"<b>Key Redeemed ✅\nPlan: {plan}\nExpires: {timer}</b>")
+    await update.message.reply_text(
+        f"<b>Key Redeemed ✅\nPlan: {plan}\nExpires: {timer}</b>", parse_mode="HTML"
+    )
+
 
 # --- Code Generation (Admin) ---
-async def gen_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def code(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
 
@@ -127,35 +190,44 @@ async def gen_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     expire_time = datetime.now() + timedelta(hours=hours)
     expire_str = expire_time.strftime("%Y-%m-%d %H:%M")
-    key = 'moksha-' + '-'.join(''.join(random.choices(string.ascii_uppercase + string.digits, k=4)) for _ in range(3))
+
+    key = "moksha-" + "-".join(
+        "".join(random.choices(string.ascii_uppercase + string.digits, k=4))
+        for _ in range(3)
+    )
 
     data = load_data()
     data[key] = {"plan": "𝗩𝗜𝗣", "time": expire_str}
     save_data(data)
 
-    await update.message.reply_html(f"<b>Key Created ✅\nPlan: VIP\nExpires: {expire_str}\nKey: /redeem {key}</b>")
+    await update.message.reply_text(
+        f"<b>Key Created ✅\nPlan: VIP\nExpires: {expire_str}\nKey: /redeem {key}</b>",
+        parse_mode="HTML",
+    )
 
-# --- Handlers ---
-application.add_handler(CommandHandler("start", start))
-application.add_handler(CommandHandler("cmds", cmds))
-application.add_handler(MessageHandler(filters.Document.ALL, handle_file))
-application.add_handler(CallbackQueryHandler(stripe_callback, pattern='b6'))
-application.add_handler(CommandHandler("redeem", redeem))
-application.add_handler(CommandHandler("code", gen_code))
 
-# --- Flask route for webhook ---
-@app.route(f"/webhook", methods=["POST"])
-def webhook():
-    update = Update.de_json(request.get_json(force=True), application.bot)
-    application.update_queue.put_nowait(update)
-    return "OK", 200
+# --- Stop Callback ---
+async def stop_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    stopuser[str(query.from_user.id)]["status"] = "stop"
+    await query.answer("Stopped!")
 
-@app.route("/")
-def index():
-    return "Bot running via Flask Webhook!", 200
 
-# --- Set webhook at startup ---
-if os.getenv("RENDER_EXTERNAL_URL"):
-    import requests
-    url = os.getenv("RENDER_EXTERNAL_URL") + "/webhook"
-    requests.get(f"https://api.telegram.org/bot{TOKEN}/setWebhook?url={url}")
+# --- Main ---
+def main():
+    app = Application.builder().token(BOT_TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("cmds", cmds))
+    app.add_handler(CommandHandler("redeem", redeem))
+    app.add_handler(CommandHandler("code", code))
+    app.add_handler(MessageHandler(filters.Document.ALL, handle_file))
+    app.add_handler(CallbackQueryHandler(stripe_callback, pattern="^b6$"))
+    app.add_handler(CallbackQueryHandler(stop_callback, pattern="^stop$"))
+
+    print("Bot is running with polling...")
+    app.run_polling()
+
+
+if __name__ == "__main__":
+    main()
