@@ -1,7 +1,5 @@
-pyTelegramBotAPI
+Flask==2.3.2
+pyTelegramBotAPI==4.14.0
 requests
 beautifulsoup4
-faker
-user_agent
-Flask
-gunicorn
+fake-useragent
