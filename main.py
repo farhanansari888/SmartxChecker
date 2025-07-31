@@ -10,7 +10,7 @@ import telebot
 from telebot import types, apihelper
 from gatet import *
 
-# Enable middleware for Flask + Telebot
+# Middleware enable
 apihelper.ENABLE_MIDDLEWARE = True
 
 # Flask init
@@ -21,24 +21,30 @@ TOKEN = os.getenv("BOT_TOKEN")
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
 
 stopuser = {}
-admin = 6838940621
+admin = 6838940621  # Change to your admin ID
 
 # Ensure data.json exists
 if not os.path.exists("data.json"):
     with open("data.json", "w") as f:
         json.dump({}, f)
 
-# --- Debug: Catch all messages to see if bot receives them ---
-@bot.message_handler(func=lambda message: True, content_types=['text'])
-def debug_message_log(message):
-    print(f"Message received: {message.text}")  # DEBUG log
-    # Agar message /start hai to manually trigger start handler
-    if message.text.startswith("/start"):
-        start_cmd(message)
+# ---------------- DEBUG LOG ----------------
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    json_str = request.get_data(as_text=True)
+    print(f"\n=== RAW UPDATE ===\n{json_str}\n=================\n")
+    update = telebot.types.Update.de_json(json_str)
+    bot.process_new_updates([update])
+    return '', 200
 
-# --- START Command ---
+@app.route('/')
+def index():
+    return "Bot running via Flask Webhook!", 200
+
+# ---------------- START Command ----------------
+@bot.message_handler(commands=['start'])
 def start_cmd(message):
-    print("Start command handler triggered")  # DEBUG
+    print("Start handler triggered")
     name = message.from_user.first_name
     user_id = str(message.from_user.id)
 
@@ -53,45 +59,42 @@ def start_cmd(message):
 
     plan = data[user_id]["plan"]
 
-    # Reply with welcome message
+    # Send welcome
     keyboard = types.InlineKeyboardMarkup()
     button = types.InlineKeyboardButton(text="✨ 𝗝𝗢𝗜𝗡 ✨", url="https://t.me/smartxchecker")
     keyboard.add(button)
     bot.send_message(message.chat.id, f"<b>HELLO {name}\nYou are on {plan} plan.</b>", reply_markup=keyboard)
 
-# --- CMDS Command ---
-@bot.message_handler(commands=["cmds"])
+# ---------------- CMDS Command ----------------
+@bot.message_handler(commands=['cmds'])
 def cmds(message):
     with open("data.json", "r") as file:
         data = json.load(file)
     plan = data.get(str(message.from_user.id), {}).get("plan", "𝗙𝗥𝗘𝗘")
 
     keyboard = types.InlineKeyboardMarkup()
-    contact_button = types.InlineKeyboardButton(text=f"✨ {plan} ✨", callback_data='plan')
-    keyboard.add(contact_button)
+    btn = types.InlineKeyboardButton(text=f"✨ {plan} ✨", callback_data='plan')
+    keyboard.add(btn)
 
     bot.send_message(
         chat_id=message.chat.id,
-        text=f"<b>Commands available:\n\n✅ STRIPE AUTH: /st\n\nMore gateways coming soon!</b>",
+        text=f"<b>Commands:\n\n✅ STRIPE AUTH: /st (file upload required)\n\nMore tools soon!</b>",
         reply_markup=keyboard
     )
 
-# --- File Upload Handler ---
+# ---------------- FILE UPLOAD ----------------
 @bot.message_handler(content_types=["document"])
 def handle_file(message):
-    name = message.from_user.first_name
     user_id = str(message.from_user.id)
-
     with open("data.json", "r") as file:
         data = json.load(file)
-
     plan = data.get(user_id, {}).get("plan", "𝗙𝗥𝗘𝗘")
 
     if plan == "𝗙𝗥𝗘𝗘":
         keyboard = types.InlineKeyboardMarkup()
         btn = types.InlineKeyboardButton(text="✨ 𝗢𝗪𝗡𝗘𝗥 ✨", url="https://t.me/smartxhacker")
         keyboard.add(btn)
-        bot.send_message(message.chat.id, f"<b>HELLO {name}\nUpgrade to VIP to use file checking feature.</b>", reply_markup=keyboard)
+        bot.send_message(message.chat.id, "<b>Upgrade to VIP to use file checking feature.</b>", reply_markup=keyboard)
         return
 
     file_info = bot.get_file(message.document.file_id)
@@ -102,9 +105,9 @@ def handle_file(message):
     keyboard = types.InlineKeyboardMarkup()
     button = types.InlineKeyboardButton(text="🏴‍☠️ Stripe Auth ♻️", callback_data='b6')
     keyboard.add(button)
-    bot.reply_to(message, "Choose the gateway you want to use:", reply_markup=keyboard)
+    bot.reply_to(message, "Choose gateway to use:", reply_markup=keyboard)
 
-# --- Stripe Auth Callback ---
+# ---------------- STRIPE AUTH CHECKER ----------------
 @bot.callback_query_handler(func=lambda call: call.data == 'b6')
 def stripe_auth(call):
     def process_cards():
@@ -136,7 +139,7 @@ def stripe_auth(call):
             start_time = time.time()
             try:
                 result = str(brn6(cc))
-            except Exception as e:
+            except:
                 result = "ERROR"
 
             msg = f"""<b>Card ➼ <code>{cc.strip()}</code>
@@ -161,7 +164,7 @@ BOT BY: @smartxhacker</b>"""
 
     threading.Thread(target=process_cards).start()
 
-# --- Redeem Command ---
+# ---------------- REDEEM COMMAND ----------------
 @bot.message_handler(func=lambda m: m.text.lower().startswith('.redeem') or m.text.lower().startswith('/redeem'))
 def redeem_key(message):
     def process_redeem():
@@ -183,14 +186,14 @@ def redeem_key(message):
             with open('data.json', 'w') as file:
                 json.dump(data, file, indent=4)
 
-            bot.reply_to(message, f"<b>Key Redeemed Successfully ✅\nPlan: {plan}\nExpires: {timer}</b>", parse_mode="HTML")
-        except Exception as e:
-            bot.reply_to(message, "<b>Incorrect code or already redeemed</b>", parse_mode="HTML")
+            bot.reply_to(message, f"<b>Key Redeemed ✅\nPlan: {plan}\nExpires: {timer}</b>", parse_mode="HTML")
+        except:
+            bot.reply_to(message, "<b>Error redeeming key</b>", parse_mode="HTML")
 
     threading.Thread(target=process_redeem).start()
 
-# --- Code Generation (Admin Only) ---
-@bot.message_handler(commands=["code"])
+# ---------------- CODE GENERATE (ADMIN) ----------------
+@bot.message_handler(commands=['code'])
 def gen_code(message):
     def process_code():
         if message.from_user.id != admin:
@@ -209,7 +212,6 @@ def gen_code(message):
 
         with open("data.json", "r") as file:
             data = json.load(file)
-
         data[key] = {"plan": "𝗩𝗜𝗣", "time": expire_str}
 
         with open("data.json", "w") as file:
@@ -219,27 +221,13 @@ def gen_code(message):
 
     threading.Thread(target=process_code).start()
 
-# --- Stop Callback ---
+# ---------------- STOP CALLBACK ----------------
 @bot.callback_query_handler(func=lambda call: call.data == 'stop')
 def stop_check(call):
     stopuser[str(call.from_user.id)]["status"] = "stop"
 
-# --- Webhook Route ---
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    print("Update received")  # DEBUG
-    json_str = request.get_data(as_text=True)
-    update = telebot.types.Update.de_json(json_str)
-    bot.process_new_updates([update])
-    return '', 200
-
-# --- Set webhook at startup ---
+# ---------------- SET WEBHOOK ----------------
 url = os.getenv("RENDER_EXTERNAL_URL")
 if url:
     bot.remove_webhook()
     bot.set_webhook(url + '/webhook')
-
-# --- Health Check ---
-@app.route('/')
-def index():
-    return "Bot is running via Flask Webhook!", 200
