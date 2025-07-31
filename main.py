@@ -82,6 +82,12 @@ def cmds(message):
         reply_markup=keyboard
     )
 
+# ---------------- PING TEST ----------------
+@bot.message_handler(commands=['ping'])
+def ping_cmd(message):
+    bot.send_message(message.chat.id, "Pong!")
+
+
 # ---------------- FILE UPLOAD ----------------
 @bot.message_handler(content_types=["document"])
 def handle_file(message):
