@@ -11,16 +11,16 @@ from flask import Flask
 from gatet import brn6
 
 # ====== CONFIGURATION ======
-TOKEN = "8208227896:AAFWdtIwr6l8tyCz3Bs_mBMDTJmdXFgqpiY"  # Apna bot token daalo
-ADMIN_ID = 6838940621
+TOKEN = "8208227896:AAFWdtIwr6l8tyCz3Bs_mBMDTJmdXFgqpiY"  # Tumhara bot token
+ADMIN_ID = 6838940621  # Tumhara admin ID
 DATA_FILE = "data.json"
 COMBO_FILE = "combo.txt"
 
 bot = TeleBot(TOKEN, parse_mode="HTML")
-bot.remove_webhook()
+bot.remove_webhook()  # Polling ke liye webhook hatao
 stopuser = {}
 
-# ====== Flask App (for Render) ======
+# ====== Flask App (Render ke liye) ======
 app = Flask(__name__)
 
 @app.route('/')
@@ -52,6 +52,10 @@ def get_user_plan(user_id):
     return data[str(user_id)]["plan"]
 
 def is_vip_active(user_id):
+    # Admin hamesha VIP
+    if user_id == ADMIN_ID:
+        return True
+
     data = ensure_user(user_id)
     if data[str(user_id)]["plan"] != "𝗩𝗜𝗣":
         return False
@@ -114,7 +118,7 @@ def handle_file(message):
     keyboard.add(types.InlineKeyboardButton(text="🏴‍☠️ Stripe Auth ♻️", callback_data="stripe"))
     bot.reply_to(message, "Choose the gateway you want to use:", reply_markup=keyboard)
 
-# ====== STRIPE AUTH CHECKER (BATCH) ======
+# ====== STRIPE AUTH CHECKER (Batch) ======
 @bot.callback_query_handler(func=lambda call: call.data == "stripe")
 def stripe_checker(call):
     def run_checker():
@@ -259,7 +263,11 @@ def st_command(message):
 @bot.message_handler(func=lambda msg: msg.text.lower().startswith("/redeem") or msg.text.lower().startswith(".redeem"))
 def redeem_key(message):
     try:
-        key = message.text.split(" ")[1]
+        parts = message.text.split(" ")
+        if len(parts) < 2:
+            bot.reply_to(message, "<b>Usage: /redeem &lt;key&gt;</b>")
+            return
+        key = parts[1]
         data = load_data()
         if key not in data:
             bot.reply_to(message, "<b>Invalid or already redeemed key.</b>")
