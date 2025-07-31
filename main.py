@@ -1,230 +1,239 @@
-import json
 import os
+import json
+import time
 import random
 import string
-import asyncio
-import time
+import threading
 from datetime import datetime, timedelta
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
-from telegram.ext import (
-    Application,
-    CommandHandler,
-    MessageHandler,
-    CallbackQueryHandler,
-    ContextTypes,
-    filters,
-)
-from gatet import brn6
+import requests
+from telebot import TeleBot, types
+from gatet import brn6  # Tumhare SmartxChecker ka gateway logic
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = 6838940621
+# ====== CONFIGURATION ======
+TOKEN = "BOT_TOKEN"  # apna token yahan daalo
+ADMIN_ID = 6176865951     # tumhara admin ID
 DATA_FILE = "data.json"
 COMBO_FILE = "combo.txt"
+
+bot = TeleBot(TOKEN, parse_mode="HTML")
 stopuser = {}
 
-# Ensure data.json exists
-if not os.path.exists(DATA_FILE):
-    with open(DATA_FILE, "w") as f:
-        json.dump({}, f)
-
-# --- Safe JSON load ---
+# ====== DATA HANDLING ======
 def load_data():
-    try:
-        with open(DATA_FILE, "r") as f:
-            content = f.read().strip()
-            if not content:
-                return {}
-            return json.loads(content)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
+    if not os.path.exists(DATA_FILE):
+        with open(DATA_FILE, "w") as f:
+            json.dump({}, f)
+    with open(DATA_FILE, "r") as f:
+        return json.load(f)
 
 def save_data(data):
     with open(DATA_FILE, "w") as f:
-        json.dump(data, f, indent=4)
+        json.dump(data, f, ensure_ascii=False, indent=4)
 
-# --- Commands ---
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
+# ====== USER PLAN CHECK ======
+def ensure_user(user_id):
     data = load_data()
-    if str(user.id) not in data:
-        data[str(user.id)] = {"plan": "𝗙𝗥𝗘𝗘", "timer": "none"}
+    if str(user_id) not in data:
+        data[str(user_id)] = {"plan": "𝗙𝗥𝗘𝗘", "timer": "none"}
+        save_data(data)
+    return data
+
+def get_user_plan(user_id):
+    data = ensure_user(user_id)
+    return data[str(user_id)]["plan"]
+
+def is_vip_active(user_id):
+    data = ensure_user(user_id)
+    if data[str(user_id)]["plan"] != "𝗩𝗜𝗣":
+        return False
+    try:
+        expiry = datetime.strptime(data[str(user_id)]["timer"].split(".")[0], "%Y-%m-%d %H:%M")
+        return datetime.now() < expiry
+    except:
+        return False
+
+# ====== START COMMAND ======
+@bot.message_handler(commands=["start"])
+def start(message):
+    user_plan = get_user_plan(message.from_user.id)
+    keyboard = types.InlineKeyboardMarkup()
+    if user_plan == "𝗙𝗥𝗘𝗘":
+        btn = types.InlineKeyboardButton(text="✨ 𝗢𝗪𝗡𝗘𝗥 ✨", url="https://t.me/Mai_Nitesh")
+        caption = (f"<b>HELLO {message.from_user.first_name}\n\n"
+                   "The VIP plan allows you to use all tools and gateways without limits.\n"
+                   "You can also check cards through a file.\n\n"
+                   "Payment methods:\nUPI\n━━━━━━━━━━━━━━━━━\nGood luck\n『@smartxhacker』</b>")
+    else:
+        btn = types.InlineKeyboardButton(text="✨ 𝗝𝗢𝗜𝗡 ✨", url="https://t.me/smartxchecker_bot")
+        caption = "Click /cmds to view commands or send a file to check cards."
+    keyboard.add(btn)
+    bot.send_photo(chat_id=message.chat.id,
+                   photo="https://t.me/GF_MAA/881",
+                   caption=caption,
+                   reply_markup=keyboard)
+
+# ====== COMMAND LIST ======
+@bot.message_handler(commands=["cmds"])
+def cmds(message):
+    user_plan = get_user_plan(message.from_user.id)
+    keyboard = types.InlineKeyboardMarkup()
+    keyboard.add(types.InlineKeyboardButton(text=f"✨ {user_plan} ✨", callback_data="plan"))
+    bot.send_message(message.chat.id,
+                     text="<b>These are the bot's commands\n\n"
+                          "✅ STRIPE AUTH <code>/st</code>\n\n"
+                          "More gateways will be added soon</b>",
+                     reply_markup=keyboard)
+
+# ====== FILE UPLOAD HANDLER ======
+@bot.message_handler(content_types=["document"])
+def handle_file(message):
+    user_id = message.from_user.id
+    plan = get_user_plan(user_id)
+
+    # Check VIP status
+    if not is_vip_active(user_id):
+        bot.send_message(message.chat.id,
+                         "<b>Your plan is FREE or expired. Upgrade to VIP to use this feature.</b>")
+        return
+
+    # Save uploaded file
+    file_info = bot.get_file(message.document.file_id)
+    downloaded = bot.download_file(file_info.file_path)
+    with open(COMBO_FILE, "wb") as f:
+        f.write(downloaded)
+
+    # Show gateway selection
+    keyboard = types.InlineKeyboardMarkup()
+    keyboard.add(types.InlineKeyboardButton(text="🏴‍☠️ Stripe Auth ♻️", callback_data="stripe"))
+    bot.reply_to(message, "Choose the gateway you want to use:", reply_markup=keyboard)
+
+# ====== STRIPE AUTH CHECKER ======
+@bot.callback_query_handler(func=lambda call: call.data == "stripe")
+def stripe_checker(call):
+    def run_checker():
+        user_id = call.from_user.id
+        stopuser[user_id] = {"status": "start"}
+
+        try:
+            with open(COMBO_FILE, "r") as f:
+                cards = f.readlines()
+
+            total = len(cards)
+            live, dead = 0, 0
+
+            bot.edit_message_text(chat_id=call.message.chat.id,
+                                  message_id=call.message.message_id,
+                                  text="Checking your cards...⌛")
+
+            for cc in cards:
+                if stopuser[user_id]["status"] == "stop":
+                    bot.edit_message_text(chat_id=call.message.chat.id,
+                                          message_id=call.message.message_id,
+                                          text="Stopped ✅\nBot by ➜ @smartxhacker")
+                    return
+
+                # BIN lookup
+                try:
+                    bin_data = requests.get(f"https://lookup.binlist.net/{cc[:6]}").json()
+                    bank = bin_data.get("bank", {}).get("name", "unknown")
+                    country = bin_data.get("country", {}).get("name", "unknown")
+                    flag = bin_data.get("country", {}).get("emoji", "🏳")
+                    brand = bin_data.get("scheme", "unknown")
+                    card_type = bin_data.get("type", "unknown")
+                except:
+                    bank, country, flag, brand, card_type = "unknown", "unknown", "🏳", "unknown", "unknown"
+
+                # Check via brn6
+                try:
+                    result = str(brn6(cc))
+                except Exception as e:
+                    result = "ERROR"
+
+                # Determine status
+                if any(x in result for x in ["success", "Approved", "Duplicate", "succeeded"]):
+                    live += 1
+                    msg = (f"<b>Approved ✅\n\n"
+                           f"Card ➼ <code>{cc}</code>\n"
+                           f"Gateway ➼ Stripe Auth\n"
+                           f"Info ➼ {card_type} - {brand}\n"
+                           f"Country ➼ {country} {flag}\n"
+                           f"Bank ➼ {bank}\n"
+                           f"Bot By: @smartxhacker</b>")
+                    bot.send_message(user_id, msg)
+                else:
+                    dead += 1
+
+                # Update status inline
+                markup = types.InlineKeyboardMarkup(row_width=1)
+                markup.add(types.InlineKeyboardButton(f"• APPROVED ✅ [{live}] •", callback_data="x"),
+                           types.InlineKeyboardButton(f"• DECLINED ❌ [{dead}] •", callback_data="x"),
+                           types.InlineKeyboardButton(f"• TOTAL 👻 [{total}] •", callback_data="x"),
+                           types.InlineKeyboardButton("[ STOP ]", callback_data="stop"))
+                bot.edit_message_text(chat_id=call.message.chat.id,
+                                      message_id=call.message.message_id,
+                                      text=f"Checking cards at Stripe Auth...\nBot By @smartxhacker",
+                                      reply_markup=markup)
+
+                time.sleep(5)
+
+            bot.edit_message_text(chat_id=call.message.chat.id,
+                                  message_id=call.message.message_id,
+                                  text="Completed ✅\nBot By ➜ @smartxhacker")
+
+        except Exception as e:
+            print("Error in checker:", e)
+
+    threading.Thread(target=run_checker).start()
+
+# ====== STOP BUTTON ======
+@bot.callback_query_handler(func=lambda call: call.data == "stop")
+def stop_checker(call):
+    user_id = call.from_user.id
+    if user_id in stopuser:
+        stopuser[user_id]["status"] = "stop"
+
+# ====== REDEEM COMMAND ======
+@bot.message_handler(func=lambda msg: msg.text.lower().startswith("/redeem") or msg.text.lower().startswith(".redeem"))
+def redeem_key(message):
+    try:
+        key = message.text.split(" ")[1]
+        data = load_data()
+        if key not in data:
+            bot.reply_to(message, "<b>Invalid or already redeemed key.</b>")
+            return
+        # Transfer plan/timer
+        data[str(message.from_user.id)] = data[key]
+        del data[key]
+        save_data(data)
+        bot.reply_to(message, "<b>Key redeemed successfully! You are now VIP.</b>")
+    except Exception as e:
+        bot.reply_to(message, "<b>Error redeeming key.</b>")
+
+# ====== CODE GENERATION (ADMIN) ======
+@bot.message_handler(commands=["code"])
+def generate_code(message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    try:
+        hours = float(message.text.split(" ")[1])
+        expiry_time = datetime.now() + timedelta(hours=hours)
+        expiry_str = expiry_time.strftime("%Y-%m-%d %H:%M")
+
+        # Generate random key
+        key = "moksha-" + "-".join(["".join(random.choices(string.ascii_uppercase + string.digits, k=4)) for _ in range(3)])
+        data = load_data()
+        data[key] = {"plan": "𝗩𝗜𝗣", "time": expiry_str}
         save_data(data)
 
-    plan = data[str(user.id)]["plan"]
+        bot.reply_to(message, f"<b>Key Created ✅\n\nPlan ➜ VIP\nExpires ➜ {expiry_str}\nKey ➜ <code>/redeem {key}</code></b>")
+    except Exception as e:
+        bot.reply_to(message, f"<b>Error: {e}</b>")
 
-    keyboard = [[InlineKeyboardButton("✨ 𝗝𝗢𝗜𝗡 ✨", url="https://t.me/smarttunnel")]]
-    await update.message.reply_text(
-        f"<b>HELLO {user.first_name}\nYou are on {plan} plan.</b>",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode="HTML",
-    )
-
-async def cmds(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    data = load_data()
-    plan = data.get(str(update.effective_user.id), {}).get("plan", "𝗙𝗥𝗘𝗘")
-
-    keyboard = [[InlineKeyboardButton(f"✨ {plan} ✨", callback_data="plan")]]
-    await update.message.reply_text(
-        "<b>Commands:\n\n✅ STRIPE AUTH: upload file then select gateway\n\nMore tools soon!</b>",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode="HTML",
-    )
-
-async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.effective_user.id)
-    data = load_data()
-    plan = data.get(user_id, {}).get("plan", "𝗙𝗥𝗘𝗘")
-
-    if plan == "𝗙𝗥𝗘𝗘":
-        keyboard = [
-            [InlineKeyboardButton("✨ 𝗢𝗪𝗡𝗘𝗥 ✨", url="https://t.me/smartxhacker")]
-        ]
-        await update.message.reply_text(
-            "<b>Upgrade to VIP to use file checking feature.</b>",
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode="HTML",
-        )
-        return
-
-    file = await context.bot.get_file(update.message.document.file_id)
-    combo_data = await file.download_as_bytearray()
-
-    with open(COMBO_FILE, "wb") as f:
-        f.write(combo_data)
-
-    keyboard = [[InlineKeyboardButton("🏴‍☠️ Stripe Auth ♻️", callback_data="b6")]]
-    await update.message.reply_text(
-        "Choose gateway to use:", reply_markup=InlineKeyboardMarkup(keyboard)
-    )
-
-async def stripe_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    user_id = str(query.from_user.id)
-    stopuser[user_id] = {"status": "start"}
-
-    with open(COMBO_FILE, "r") as f:
-        cards = f.readlines()
-
-    await query.edit_message_text("Checking your cards...⌛")
-
-    live, dead = 0, 0
-    for cc in cards:
-        if stopuser[user_id]["status"] == "stop":
-            await query.edit_message_text("STOPPED ✅\nBOT BY ➜ @smartxhacker")
-            return
-
-        start_time = time.time()
-        try:
-            result = str(brn6(cc))
-        except Exception:
-            result = "ERROR"
-
-        msg = (
-            f"<b>Card ➼ <code>{cc.strip()}</code>\n"
-            f"Status ➼ {result}\n"
-            f"Gateway ➼ Stripe Auth\n"
-            f"Time ➼ {'{:.1f}'.format(time.time() - start_time)}s\n"
-            f"BOT BY: @smartxhacker</b>"
-        )
-
-        if "Approved" in result or "succeeded" in result or "Duplicate" in result:
-            live += 1
-            await context.bot.send_message(query.from_user.id, msg, parse_mode="HTML")
-        else:
-            dead += 1
-
-        await asyncio.sleep(3)
-
-    await query.edit_message_text("COMPLETED ✅\nBOT BY ➜ @smartxhacker")
-
-async def redeem(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    data = load_data()
+# ====== START POLLING ======
+print("Bot Started ✅")
+while True:
     try:
-        key = context.args[0]
-    except IndexError:
-        await update.message.reply_text("<b>Usage: /redeem <key></b>", parse_mode="HTML")
-        return
-
-    if key not in data:
-        await update.message.reply_text(
-            "<b>Invalid or already redeemed key</b>", parse_mode="HTML"
-        )
-        return
-
-    timer = data[key]["time"]
-    plan = data[key]["plan"]
-
-    data[str(update.effective_user.id)] = {"plan": plan, "timer": timer}
-    del data[key]
-    save_data(data)
-
-    await update.message.reply_text(
-        f"<b>Key Redeemed ✅\nPlan: {plan}\nExpires: {timer}</b>", parse_mode="HTML"
-    )
-
-async def code(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        return
-
-    try:
-        hours = float(context.args[0])
-    except:
-        await update.message.reply_text("Usage: /code <hours>")
-        return
-
-    expire_time = datetime.now() + timedelta(hours=hours)
-    expire_str = expire_time.strftime("%Y-%m-%d %H:%M")
-
-    key = "moksha-" + "-".join(
-        "".join(random.choices(string.ascii_uppercase + string.digits, k=4))
-        for _ in range(3)
-    )
-
-    data = load_data()
-    data[key] = {"plan": "𝗩𝗜𝗣", "time": expire_str}
-    save_data(data)
-
-    await update.message.reply_text(
-        f"<b>Key Created ✅\nPlan: VIP\nExpires: {expire_str}\nKey: /redeem {key}</b>",
-        parse_mode="HTML",
-    )
-
-async def stop_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    stopuser[str(query.from_user.id)]["status"] = "stop"
-    await query.answer("Stopped!")
-
-# --- Main ---
-def main():
-    app = Application.builder().token(BOT_TOKEN).build()
-
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("cmds", cmds))
-    app.add_handler(CommandHandler("redeem", redeem))
-    app.add_handler(CommandHandler("code", code))
-    app.add_handler(MessageHandler(filters.Document.ALL, handle_file))
-    app.add_handler(CallbackQueryHandler(stripe_callback, pattern="^b6$"))
-    app.add_handler(CallbackQueryHandler(stop_callback, pattern="^stop$"))
-
-    # Webhook ke liye health check endpoint (404 fix)
-    from flask import Flask
-    flask_app = Flask(__name__)
-
-    @flask_app.route("/")
-    def home():
-        return "Bot is running!", 200
-
-    port = int(os.environ.get("PORT", 10000))
-    print(f"Running on port {port}")
-
-    app.run_webhook(
-        listen="0.0.0.0",
-        port=port,
-        url_path=BOT_TOKEN,
-        webhook_url=f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/{BOT_TOKEN}",
-    )
-
-if __name__ == "__main__":
-    main()
+        bot.polling(none_stop=True)
+    except Exception as e:
+        print("Polling error:", e)
+        time.sleep(3)
