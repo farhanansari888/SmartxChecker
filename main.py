@@ -7,18 +7,26 @@ import threading
 from datetime import datetime, timedelta
 import requests
 from telebot import TeleBot, types
-from gatet import brn6  # Tumhare SmartxChecker ka gateway logic
+from flask import Flask  # For Render port binding
+from gatet import brn6  # Tumhare gateway ka function
 
 # ====== CONFIGURATION ======
-TOKEN = "BOT_TOKEN"  # apna token yahan daalo
-ADMIN_ID = 6176865951     # tumhara admin ID
+TOKEN = "YOUR_BOT_TOKEN"  # Apna bot token daalo
+ADMIN_ID = 6176865951
 DATA_FILE = "data.json"
 COMBO_FILE = "combo.txt"
 
 bot = TeleBot(TOKEN, parse_mode="HTML")
 stopuser = {}
 
-# ====== DATA HANDLING ======
+# ====== Flask App (for Render) ======
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Bot is running!"
+
+# ====== Data Handling ======
 def load_data():
     if not os.path.exists(DATA_FILE):
         with open(DATA_FILE, "w") as f:
@@ -30,7 +38,7 @@ def save_data(data):
     with open(DATA_FILE, "w") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
-# ====== USER PLAN CHECK ======
+# ====== User Plan ======
 def ensure_user(user_id):
     data = load_data()
     if str(user_id) not in data:
@@ -58,13 +66,13 @@ def start(message):
     user_plan = get_user_plan(message.from_user.id)
     keyboard = types.InlineKeyboardMarkup()
     if user_plan == "𝗙𝗥𝗘𝗘":
-        btn = types.InlineKeyboardButton(text="✨ 𝗢𝗪𝗡𝗘𝗥 ✨", url="https://t.me/Mai_Nitesh")
+        btn = types.InlineKeyboardButton(text="✨ 𝗢𝗪𝗡𝗘𝗥 ✨", url="https://t.me/smartxhacker")
         caption = (f"<b>HELLO {message.from_user.first_name}\n\n"
                    "The VIP plan allows you to use all tools and gateways without limits.\n"
                    "You can also check cards through a file.\n\n"
                    "Payment methods:\nUPI\n━━━━━━━━━━━━━━━━━\nGood luck\n『@smartxhacker』</b>")
     else:
-        btn = types.InlineKeyboardButton(text="✨ 𝗝𝗢𝗜𝗡 ✨", url="https://t.me/smartxchecker_bot")
+        btn = types.InlineKeyboardButton(text="✨ 𝗝𝗢𝗜𝗡 ✨", url="https://t.me/smartxchecker")
         caption = "Click /cmds to view commands or send a file to check cards."
     keyboard.add(btn)
     bot.send_photo(chat_id=message.chat.id,
@@ -88,9 +96,7 @@ def cmds(message):
 @bot.message_handler(content_types=["document"])
 def handle_file(message):
     user_id = message.from_user.id
-    plan = get_user_plan(user_id)
 
-    # Check VIP status
     if not is_vip_active(user_id):
         bot.send_message(message.chat.id,
                          "<b>Your plan is FREE or expired. Upgrade to VIP to use this feature.</b>")
@@ -163,7 +169,7 @@ def stripe_checker(call):
                 else:
                     dead += 1
 
-                # Update status inline
+                # Update inline message
                 markup = types.InlineKeyboardMarkup(row_width=1)
                 markup.add(types.InlineKeyboardButton(f"• APPROVED ✅ [{live}] •", callback_data="x"),
                            types.InlineKeyboardButton(f"• DECLINED ❌ [{dead}] •", callback_data="x"),
@@ -229,11 +235,20 @@ def generate_code(message):
     except Exception as e:
         bot.reply_to(message, f"<b>Error: {e}</b>")
 
-# ====== START POLLING ======
-print("Bot Started ✅")
-while True:
-    try:
-        bot.polling(none_stop=True)
-    except Exception as e:
-        print("Polling error:", e)
-        time.sleep(3)
+# ====== Polling in background ======
+def run_bot():
+    print("Bot Started ✅")
+    while True:
+        try:
+            bot.polling(none_stop=True)
+        except Exception as e:
+            print("Polling error:", e)
+            time.sleep(3)
+
+if __name__ == "__main__":
+    # Start bot polling in separate thread
+    threading.Thread(target=run_bot).start()
+
+    # Start Flask server for Render
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
