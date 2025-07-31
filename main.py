@@ -16,22 +16,29 @@ apihelper.ENABLE_MIDDLEWARE = True
 # Flask init
 app = Flask(__name__)
 
-# Telegram bot init (Render par BOT_TOKEN env me set karna)
+# Telegram bot init
 TOKEN = os.getenv("BOT_TOKEN")
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
 
 stopuser = {}
-admin = 6838940621  # admin user id
+admin = 6838940621
 
 # Ensure data.json exists
 if not os.path.exists("data.json"):
     with open("data.json", "w") as f:
         json.dump({}, f)
 
+# --- Debug: Catch all messages to see if bot receives them ---
+@bot.message_handler(func=lambda message: True, content_types=['text'])
+def debug_message_log(message):
+    print(f"Message received: {message.text}")  # DEBUG log
+    # Agar message /start hai to manually trigger start handler
+    if message.text.startswith("/start"):
+        start_cmd(message)
+
 # --- START Command ---
-@bot.message_handler(commands=["start"])
 def start_cmd(message):
-    print("Start command handler triggered")
+    print("Start command handler triggered")  # DEBUG
     name = message.from_user.first_name
     user_id = str(message.from_user.id)
 
@@ -75,13 +82,11 @@ def handle_file(message):
     name = message.from_user.first_name
     user_id = str(message.from_user.id)
 
-    # Load plan info
     with open("data.json", "r") as file:
         data = json.load(file)
 
     plan = data.get(user_id, {}).get("plan", "𝗙𝗥𝗘𝗘")
 
-    # If FREE, ask for VIP
     if plan == "𝗙𝗥𝗘𝗘":
         keyboard = types.InlineKeyboardMarkup()
         btn = types.InlineKeyboardButton(text="✨ 𝗢𝗪𝗡𝗘𝗥 ✨", url="https://t.me/smartxhacker")
@@ -89,7 +94,6 @@ def handle_file(message):
         bot.send_message(message.chat.id, f"<b>HELLO {name}\nUpgrade to VIP to use file checking feature.</b>", reply_markup=keyboard)
         return
 
-    # Save uploaded file
     file_info = bot.get_file(message.document.file_id)
     file_data = bot.download_file(file_info.file_path)
     with open("combo.txt", "wb") as f:
@@ -135,7 +139,6 @@ def stripe_auth(call):
             except Exception as e:
                 result = "ERROR"
 
-            # Build message
             msg = f"""<b>Card ➼ <code>{cc.strip()}</code>
 Status ➼ {result}
 Gateway ➼ {gate}
@@ -148,7 +151,7 @@ BOT BY: @smartxhacker</b>"""
             else:
                 dd += 1
 
-            time.sleep(3)  # Delay between checks
+            time.sleep(3)
 
         bot.edit_message_text(
             chat_id=call.message.chat.id,
@@ -167,7 +170,6 @@ def redeem_key(message):
             with open('data.json', 'r') as file:
                 data = json.load(file)
 
-            # Transfer plan and timer to user
             if key not in data:
                 bot.reply_to(message, "<b>Invalid or already redeemed key</b>", parse_mode="HTML")
                 return
@@ -203,10 +205,8 @@ def gen_code(message):
         expire_time = datetime.now() + timedelta(hours=hours)
         expire_str = expire_time.strftime("%Y-%m-%d %H:%M")
 
-        # Generate random key
         key = 'moksha-' + '-'.join(''.join(random.choices(string.ascii_uppercase + string.digits, k=4)) for _ in range(3))
 
-        # Save key
         with open("data.json", "r") as file:
             data = json.load(file)
 
