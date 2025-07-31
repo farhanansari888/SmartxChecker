@@ -114,7 +114,7 @@ def handle_file(message):
     keyboard.add(types.InlineKeyboardButton(text="🏴‍☠️ Stripe Auth ♻️", callback_data="stripe"))
     bot.reply_to(message, "Choose the gateway you want to use:", reply_markup=keyboard)
 
-# ====== STRIPE AUTH CHECKER ======
+# ====== STRIPE AUTH CHECKER (BATCH) ======
 @bot.callback_query_handler(func=lambda call: call.data == "stripe")
 def stripe_checker(call):
     def run_checker():
@@ -153,7 +153,7 @@ def stripe_checker(call):
                 # Check via brn6
                 try:
                     result = str(brn6(cc))
-                except Exception as e:
+                except Exception:
                     result = "ERROR"
 
                 # Determine status
@@ -199,29 +199,61 @@ def stop_checker(call):
     if user_id in stopuser:
         stopuser[user_id]["status"] = "stop"
 
-# ====== /st Command (Direct Trigger) ======
+# ====== /st COMMAND (Hybrid: Single or File) ======
 @bot.message_handler(commands=["st"])
 def st_command(message):
     user_id = message.from_user.id
 
+    # VIP check
     if not is_vip_active(user_id):
         bot.send_message(message.chat.id,
                          "<b>Your plan is FREE or expired. Upgrade to VIP to use this feature.</b>")
         return
 
-    if not os.path.exists(COMBO_FILE):
-        bot.send_message(message.chat.id,
-                         "<b>No combo file found! Please upload a file first.</b>")
-        return
+    # Agar single card diya gaya ho
+    parts = message.text.split(" ", 1)
+    if len(parts) > 1:
+        cc = parts[1].strip()
 
-    # Simulate callback for stripe checker
-    class DummyCall:
-        def __init__(self, msg):
-            self.data = "stripe"
-            self.message = msg
-            self.from_user = msg.from_user
+        # BIN lookup
+        try:
+            bin_data = requests.get(f"https://lookup.binlist.net/{cc[:6]}").json()
+            bank = bin_data.get("bank", {}).get("name", "unknown")
+            country = bin_data.get("country", {}).get("name", "unknown")
+            flag = bin_data.get("country", {}).get("emoji", "🏳")
+            brand = bin_data.get("scheme", "unknown")
+            card_type = bin_data.get("type", "unknown")
+        except:
+            bank, country, flag, brand, card_type = "unknown", "unknown", "🏳", "unknown", "unknown"
 
-    stripe_checker(DummyCall(message))
+        # Stripe check
+        try:
+            result = str(brn6(cc))
+        except Exception:
+            result = "ERROR"
+
+        # Result send
+        if any(x in result for x in ["success", "Approved", "Duplicate", "succeeded"]):
+            bot.send_message(user_id,
+                             f"<b>Approved ✅\n\nCard ➼ <code>{cc}</code>\nGateway ➼ Stripe Auth\n"
+                             f"Info ➼ {card_type} - {brand}\nCountry ➼ {country} {flag}\nBank ➼ {bank}\nBot By: @smartxhacker</b>")
+        else:
+            bot.send_message(user_id,
+                             f"<b>Declined ❌\n\nCard ➼ <code>{cc}</code>\nGateway ➼ Stripe Auth</b>")
+    else:
+        # Agar single card nahi diya to combo file use kare
+        if not os.path.exists(COMBO_FILE):
+            bot.send_message(message.chat.id, "<b>No combo file found! Please upload a file first.</b>")
+            return
+
+        # Simulate callback for stripe checker
+        class DummyCall:
+            def __init__(self, msg):
+                self.data = "stripe"
+                self.message = msg
+                self.from_user = msg.from_user
+
+        stripe_checker(DummyCall(message))
 
 # ====== REDEEM COMMAND ======
 @bot.message_handler(func=lambda msg: msg.text.lower().startswith("/redeem") or msg.text.lower().startswith(".redeem"))
