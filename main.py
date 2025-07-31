@@ -7,8 +7,8 @@ import threading
 from datetime import datetime, timedelta
 import requests
 from telebot import TeleBot, types
-from flask import Flask  # For Render port binding
-from gatet import brn6  # Tumhare gateway ka function
+from flask import Flask
+from gatet import brn6
 
 # ====== CONFIGURATION ======
 TOKEN = "8208227896:AAFWdtIwr6l8tyCz3Bs_mBMDTJmdXFgqpiY"  # Apna bot token daalo
@@ -199,6 +199,30 @@ def stop_checker(call):
     if user_id in stopuser:
         stopuser[user_id]["status"] = "stop"
 
+# ====== /st Command (Direct Trigger) ======
+@bot.message_handler(commands=["st"])
+def st_command(message):
+    user_id = message.from_user.id
+
+    if not is_vip_active(user_id):
+        bot.send_message(message.chat.id,
+                         "<b>Your plan is FREE or expired. Upgrade to VIP to use this feature.</b>")
+        return
+
+    if not os.path.exists(COMBO_FILE):
+        bot.send_message(message.chat.id,
+                         "<b>No combo file found! Please upload a file first.</b>")
+        return
+
+    # Simulate callback for stripe checker
+    class DummyCall:
+        def __init__(self, msg):
+            self.data = "stripe"
+            self.message = msg
+            self.from_user = msg.from_user
+
+    stripe_checker(DummyCall(message))
+
 # ====== REDEEM COMMAND ======
 @bot.message_handler(func=lambda msg: msg.text.lower().startswith("/redeem") or msg.text.lower().startswith(".redeem"))
 def redeem_key(message):
@@ -208,12 +232,11 @@ def redeem_key(message):
         if key not in data:
             bot.reply_to(message, "<b>Invalid or already redeemed key.</b>")
             return
-        # Transfer plan/timer
         data[str(message.from_user.id)] = data[key]
         del data[key]
         save_data(data)
         bot.reply_to(message, "<b>Key redeemed successfully! You are now VIP.</b>")
-    except Exception as e:
+    except Exception:
         bot.reply_to(message, "<b>Error redeeming key.</b>")
 
 # ====== CODE GENERATION (ADMIN) ======
@@ -226,7 +249,6 @@ def generate_code(message):
         expiry_time = datetime.now() + timedelta(hours=hours)
         expiry_str = expiry_time.strftime("%Y-%m-%d %H:%M")
 
-        # Generate random key
         key = "moksha-" + "-".join(["".join(random.choices(string.ascii_uppercase + string.digits, k=4)) for _ in range(3)])
         data = load_data()
         data[key] = {"plan": "𝗩𝗜𝗣", "time": expiry_str}
@@ -247,9 +269,6 @@ def run_bot():
             time.sleep(3)
 
 if __name__ == "__main__":
-    # Start bot polling in separate thread
     threading.Thread(target=run_bot).start()
-
-    # Start Flask server for Render
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
