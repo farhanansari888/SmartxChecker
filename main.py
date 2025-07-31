@@ -29,7 +29,7 @@ if not os.path.exists(DATA_FILE):
         json.dump({}, f)
 
 
-# Utility: Load & save data
+# Utility functions
 def load_data():
     with open(DATA_FILE, "r") as f:
         return json.load(f)
@@ -73,7 +73,7 @@ async def cmds(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-# --- FILE UPLOAD ---
+# --- File Upload ---
 async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     data = load_data()
@@ -105,7 +105,7 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-# --- Stripe Auth Handler ---
+# --- Stripe Auth Callback ---
 async def stripe_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -113,7 +113,6 @@ async def stripe_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(query.from_user.id)
     stopuser[user_id] = {"status": "start"}
 
-    # Read combo
     with open(COMBO_FILE, "r") as f:
         cards = f.readlines()
 
@@ -213,10 +212,11 @@ async def stop_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer("Stopped!")
 
 
-# --- Main ---
+# --- Main (Webhook mode for Render) ---
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
+    # Add handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("cmds", cmds))
     app.add_handler(CommandHandler("redeem", redeem))
@@ -225,8 +225,19 @@ def main():
     app.add_handler(CallbackQueryHandler(stripe_callback, pattern="^b6$"))
     app.add_handler(CallbackQueryHandler(stop_callback, pattern="^stop$"))
 
-    print("Bot is running with polling...")
-    app.run_polling()
+    # Webhook setup
+    port = int(os.getenv("PORT", 10000))
+    url = os.getenv("RENDER_EXTERNAL_URL")
+    webhook_url = f"{url}/{BOT_TOKEN}"
+
+    print(f"Setting webhook at {webhook_url}")
+
+    app.run_webhook(
+        listen="0.0.0.0",
+        port=port,
+        url_path=BOT_TOKEN,
+        webhook_url=webhook_url
+    )
 
 
 if __name__ == "__main__":
