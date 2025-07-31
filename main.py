@@ -31,6 +31,7 @@ if not os.path.exists("data.json"):
 # --- START Command ---
 @bot.message_handler(commands=["start"])
 def start_cmd(message):
+    print("Start command handler triggered")
     name = message.from_user.first_name
     user_id = str(message.from_user.id)
 
