@@ -3,7 +3,12 @@ import re
 import json
 import random
 from bs4 import BeautifulSoup
-import user_agent
+from fake_useragent import UserAgent
+
+# Usage:
+ua = UserAgent()
+user = ua.random
+
 
 def brn6(ccx):
     try:
@@ -18,7 +23,8 @@ def brn6(ccx):
             yy = yy.split("20")[1]
 
         # Generate user agent
-        user = user_agent.generate_user_agent()
+        ua = UserAgent()
+        user = ua.random
 
         # First request to Stripe
         headers = {
