@@ -17,6 +17,7 @@ DATA_FILE = "data.json"
 COMBO_FILE = "combo.txt"
 
 bot = TeleBot(TOKEN, parse_mode="HTML")
+bot.remove_webhook()
 stopuser = {}
 
 # ====== Flask App (for Render) ======
