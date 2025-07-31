@@ -16,7 +16,6 @@ from telegram.ext import (
 )
 from gatet import brn6
 
-# --- Global setup ---
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = 6838940621
 DATA_FILE = "data.json"
@@ -28,19 +27,22 @@ if not os.path.exists(DATA_FILE):
     with open(DATA_FILE, "w") as f:
         json.dump({}, f)
 
-
-# Utility functions
+# --- Safe JSON load ---
 def load_data():
-    with open(DATA_FILE, "r") as f:
-        return json.load(f)
-
+    try:
+        with open(DATA_FILE, "r") as f:
+            content = f.read().strip()
+            if not content:
+                return {}
+            return json.loads(content)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
 
 def save_data(data):
     with open(DATA_FILE, "w") as f:
         json.dump(data, f, indent=4)
 
-
-# --- START Command ---
+# --- Commands ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     data = load_data()
@@ -50,17 +52,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     plan = data[str(user.id)]["plan"]
 
-    keyboard = [
-        [InlineKeyboardButton("✨ 𝗝𝗢𝗜𝗡 ✨", url="https://t.me/smartxchecker")]
-    ]
+    keyboard = [[InlineKeyboardButton("✨ 𝗝𝗢𝗜𝗡 ✨", url="https://t.me/smartxchecker")]]
     await update.message.reply_text(
         f"<b>HELLO {user.first_name}\nYou are on {plan} plan.</b>",
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode="HTML",
     )
 
-
-# --- CMDS Command ---
 async def cmds(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = load_data()
     plan = data.get(str(update.effective_user.id), {}).get("plan", "𝗙𝗥𝗘𝗘")
@@ -72,8 +70,6 @@ async def cmds(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="HTML",
     )
 
-
-# --- File Upload ---
 async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     data = load_data()
@@ -90,22 +86,17 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Download file
     file = await context.bot.get_file(update.message.document.file_id)
     combo_data = await file.download_as_bytearray()
 
     with open(COMBO_FILE, "wb") as f:
         f.write(combo_data)
 
-    keyboard = [
-        [InlineKeyboardButton("🏴‍☠️ Stripe Auth ♻️", callback_data="b6")]
-    ]
+    keyboard = [[InlineKeyboardButton("🏴‍☠️ Stripe Auth ♻️", callback_data="b6")]]
     await update.message.reply_text(
         "Choose gateway to use:", reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
-
-# --- Stripe Auth Callback ---
 async def stripe_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -148,8 +139,6 @@ async def stripe_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await query.edit_message_text("COMPLETED ✅\nBOT BY ➜ @smartxhacker")
 
-
-# --- Redeem Command ---
 async def redeem(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = load_data()
     try:
@@ -175,8 +164,6 @@ async def redeem(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"<b>Key Redeemed ✅\nPlan: {plan}\nExpires: {timer}</b>", parse_mode="HTML"
     )
 
-
-# --- Code Generation (Admin) ---
 async def code(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
@@ -204,19 +191,15 @@ async def code(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="HTML",
     )
 
-
-# --- Stop Callback ---
 async def stop_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     stopuser[str(query.from_user.id)]["status"] = "stop"
     await query.answer("Stopped!")
 
-
-# --- Main (Webhook mode for Render) ---
+# --- Main ---
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
-    # Add handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("cmds", cmds))
     app.add_handler(CommandHandler("redeem", redeem))
@@ -225,20 +208,23 @@ def main():
     app.add_handler(CallbackQueryHandler(stripe_callback, pattern="^b6$"))
     app.add_handler(CallbackQueryHandler(stop_callback, pattern="^stop$"))
 
-    # Webhook setup
-    port = int(os.getenv("PORT", 10000))
-    url = os.getenv("RENDER_EXTERNAL_URL")
-    webhook_url = f"{url}/{BOT_TOKEN}"
+    # Webhook ke liye health check endpoint (404 fix)
+    from flask import Flask
+    flask_app = Flask(__name__)
 
-    print(f"Setting webhook at {webhook_url}")
+    @flask_app.route("/")
+    def home():
+        return "Bot is running!", 200
+
+    port = int(os.environ.get("PORT", 10000))
+    print(f"Running on port {port}")
 
     app.run_webhook(
         listen="0.0.0.0",
         port=port,
         url_path=BOT_TOKEN,
-        webhook_url=webhook_url
+        webhook_url=f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/{BOT_TOKEN}",
     )
-
 
 if __name__ == "__main__":
     main()
