@@ -2,68 +2,47 @@ import os
 import requests
 import logging
 
-# === Config ===
-RAPIDAPI_KEY = os.environ.get("RAPIDAPI_KEY")
+RAPIDAPI_KEY = os.getenv("X-RapidAPI-Key")  # Key from env
 
-API_URL = "https://truecaller16.p.rapidapi.com/api/v1/getDetails"
-
-HEADERS = {
-    "x-rapidapi-host": "truecaller16.p.rapidapi.com",
-    "x-rapidapi-key": RAPIDAPI_KEY
-}
-
-# === Logger Setup ===
-logger = logging.getLogger(__name__)
-
-def get_number_details(number: str, country_code: str = "IN"):
+def get_truecaller_data(number: str):
     """
-    RapidAPI Truecaller16 API se number details fetch karta hai
+    Fetch data from Truecaller16 API using RapidAPI.
     """
-
-    # +91 ke bina 91 rakho
-    if number.startswith("+"):
-        number = number.replace("+", "")
-    if not number.startswith("91"):
-        number = "91" + number
-
+    url = "https://truecaller16.p.rapidapi.com/api/v1/search"
+    headers = {
+        "x-rapidapi-host": "truecaller16.p.rapidapi.com",
+        "x-rapidapi-key": RAPIDAPI_KEY
+    }
     params = {
-        "phone": number,
-        "countryCode": country_code,
-        "installationId": "eb633e0a-443d-44f5-bb4c-aaa9dfe5fc0d"  # required by API
+        "code": "91",   # Always 91 for India
+        "number": number
     }
 
-    try:
-        logger.info(f"Making API request for {number} with country code {country_code}")
+    logging.info(f"Making API request for {number} with params {params}")
 
-        response = requests.get(API_URL, headers=HEADERS, params=params, timeout=10)
-        logger.info(f"API Status Code: {response.status_code}")
+    try:
+        response = requests.get(url, headers=headers, params=params)
+        logging.info(f"API Status Code: {response.status_code}")
 
         if response.status_code != 200:
             return f"❌ API request failed with status code {response.status_code}"
 
         data = response.json()
-        logger.debug(f"Full API response: {data}")
+        logging.info(f"API Response JSON: {data}")
 
-        # Agar 'data' key nahi hai
-        if not data or "data" not in data or not data["data"]:
-            logger.warning(f"No data found for {number}")
+        # Handle no data
+        if not data or "data" not in data or len(data["data"]) == 0:
             return f"❌ No data found for this number."
 
-        details = data["data"][0]
-        name = details.get("name", "N/A")
-        carrier = details.get("carrier", "N/A")
-        city = details.get("city", "N/A")
+        user = data["data"][0]
+        name = user.get("name", "N/A")
+        carrier = user.get("carrier", "N/A")
+        city = user.get("city", "N/A")
+        email = user.get("email", "N/A")
 
-        result = (
-            f"📞 *Number Details:*\n\n"
-            f"**Name:** {name}\n"
-            f"**Carrier:** {carrier}\n"
-            f"**City:** {city}\n"
-        )
-
-        logger.info(f"API Response for {number}: {result}")
+        result = f"📞 Name: {name}\n📱 Carrier: {carrier}\n🏙 City: {city}\n✉ Email: {email}"
         return result
 
     except Exception as e:
-        logger.exception(f"Error fetching data for {number}")
+        logging.error(f"Error in API call: {e}")
         return f"❌ Error: {str(e)}"
