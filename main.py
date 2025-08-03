@@ -1,100 +1,84 @@
 import logging
-import os
-import threading
-import time
-from flask import Flask
-from telegram import Update, BotCommand
+from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
-from truecaller_api import lookup_number
+from truecaller_api import search_number
 
-# === Logging Setup ===
+# Telegram Bot Token
+import os
+TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+
+# Logging Setup
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s"
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    level=logging.INFO
 )
-logger = logging.getLogger(__name__)
 
-# === Environment Variables ===
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
-# Check token
-if not TELEGRAM_BOT_TOKEN:
-    logger.error("❌ TELEGRAM_BOT_TOKEN not set! Set environment variable first.")
-else:
-    logger.info("✅ TELEGRAM_BOT_TOKEN loaded successfully.")
+# -------- Helper: Sanitize Number --------
+def format_number(raw_number: str) -> str:
+    """
+    Format number to '91XXXXXXXXXX'
+    """
+    raw_number = raw_number.strip().replace(" ", "").replace("-", "")
 
-# === Flask App ===
-app = Flask(__name__)
+    if raw_number.startswith("+91"):
+        return raw_number.replace("+", "")  # +91 → 91
+    elif raw_number.startswith("91") and len(raw_number) == 12:
+        return raw_number
+    elif len(raw_number) == 10:
+        return "91" + raw_number
+    else:
+        return None
 
-@app.route('/')
-def home():
-    logger.info("Home route accessed.")
-    return "✅ Truecaller Bot Running!"
 
-# Flask ko alag thread par chalane ke liye function
-def run_flask():
-    logger.info("Starting Flask server on port 8080...")
-    app.run(host="0.0.0.0", port=8080)
-
-# === Start Command ===
+# -------- Commands --------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.info(f"/start command used by {update.effective_user.id}")
-    welcome_text = (
-        "👋 *Welcome to Truecaller Lookup Bot!*\n\n"
-        "Send me any phone number with country code (e.g., `+919876543210`) "
-        "and I will find the details using Truecaller API."
+    await update.message.reply_text(
+        "👋 Welcome to SmartxChecker!\n\nSend me a phone number to lookup details via Truecaller API."
     )
-    await update.message.reply_text(welcome_text, parse_mode="Markdown")
 
-# === Handle Phone Numbers ===
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    number = update.message.text.strip()
-    logger.info(f"Received message: {number} from user {update.effective_user.id}")
 
-    # Basic validation
-    if not number.startswith("+") or not number[1:].isdigit():
-        logger.warning("Invalid number format received.")
-        await update.message.reply_text("⚠️ Please send a valid phone number with `+` and country code.")
+# -------- Handle Numbers --------
+async def handle_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    raw_number = update.message.text
+
+    # Format number
+    phone_number = format_number(raw_number)
+    if not phone_number:
+        await update.message.reply_text("⚠️ Invalid number format. Send a valid 10-digit Indian number.")
         return
 
-    # Fetch details
-    await update.message.reply_text("⏳ Fetching details from Truecaller...")
-    details = lookup_number(number)
-    logger.info(f"API Response for {number}: {details}")
-    await update.message.reply_text(details, parse_mode="Markdown")
+    # Log formatted number
+    logging.info(f"User input: {raw_number} | Formatted: {phone_number}")
 
-# === Main Function ===
+    # Call API
+    result = search_number(phone_number)
+
+    # Show result
+    if "error" in result:
+        await update.message.reply_text(f"❌ {result['error']}")
+    else:
+        reply = (
+            f"📞 *Number Details*\n\n"
+            f"**Name:** {result['name']}\n"
+            f"**Carrier:** {result['carrier']}\n"
+            f"**Country:** {result['country']}\n"
+            f"**Score:** {result['score']}\n"
+            f"**Spam:** {'Yes' if result['spam'] else 'No'}"
+        )
+        await update.message.reply_text(reply, parse_mode="Markdown")
+
+
+# -------- Main --------
 def main():
-    logger.info("Bot starting...")
+    app = ApplicationBuilder().token(TOKEN).build()
 
-    # Delete webhook (polling use karne ke liye)
-    from requests import get
-    try:
-        get(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/deleteWebhook")
-        logger.info("Webhook deleted successfully.")
-    except Exception as e:
-        logger.error(f"Error deleting webhook: {e}")
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_number))
 
-    # Flask thread start
-    threading.Thread(target=run_flask).start()
+    logging.info("Bot started polling...")
+    app.run_polling()
 
-    # Telegram bot build
-    app_bot = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
-    # Commands set
-    commands = [
-        BotCommand("start", "Start the bot"),
-    ]
-    app_bot.bot.set_my_commands(commands)
-
-    # Handlers
-    app_bot.add_handler(CommandHandler("start", start))
-    app_bot.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-    # Polling run
-    logger.info("Polling started...")
-    app_bot.run_polling(close_loop=False)
-
-# === Entry Point ===
 if __name__ == "__main__":
     main()

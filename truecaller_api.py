@@ -1,50 +1,57 @@
-import requests
 import os
+import requests
 import logging
 
-# Setup logger
-logger = logging.getLogger(__name__)
+# RapidAPI Config
+RAPIDAPI_KEY = os.environ.get("RAPIDAPI_KEY")
+API_URL = "https://truecaller16.p.rapidapi.com/api/v1/search"
 
-RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
+HEADERS = {
+    "x-rapidapi-key": RAPIDAPI_KEY,
+    "x-rapidapi-host": "truecaller16.p.rapidapi.com"
+}
 
-if not RAPIDAPI_KEY:
-    logger.error("❌ RAPIDAPI_KEY not set! Set environment variable first.")
-else:
-    logger.info("✅ RAPIDAPI_KEY loaded successfully.")
 
-def lookup_number(phone_number, country_code="IN"):
+def search_number(phone_number: str, country_code: str = "IN") -> dict:
     """
-    Truecaller16 API se number lookup karega
+    Search number using Truecaller16 API
+    phone_number: '91XXXXXXXXXX'
+    country_code: 'IN'
     """
-    url = "https://truecaller16.p.rapidapi.com/api/v1/search"
-    querystring = {"number": phone_number, "countryCode": country_code}
-
-    headers = {
-        "x-rapidapi-key": RAPIDAPI_KEY,
-        "x-rapidapi-host": "truecaller16.p.rapidapi.com"
-    }
-
-    logger.info(f"Making API request for {phone_number} with country code {country_code}")
-
     try:
-        response = requests.get(url, headers=headers, params=querystring, timeout=10)
-        logger.info(f"API Status Code: {response.status_code}")
+        logging.info(f"Making API request for {phone_number} with country code {country_code}")
+
+        params = {
+            "phone": phone_number,
+            "countryCode": country_code
+        }
+
+        response = requests.get(API_URL, headers=HEADERS, params=params)
+        logging.info(f"API Status Code: {response.status_code}")
+
+        if response.status_code != 200:
+            return {"error": f"API error: {response.status_code}"}
+
         data = response.json()
-        logger.debug(f"Raw API Response: {data}")
 
-        if response.status_code == 200 and data.get("data"):
-            result = data["data"][0]
-            name = result.get("name", "N/A")
-            carrier = result.get("carrier", "Unknown")
-            city = result.get("city", "Unknown")
-            email = result.get("email", "Not available")
+        # Debugging ke liye full response log karna
+        logging.debug(f"Full API Response: {data}")
 
-            return f"📞 *Name:* {name}\n🏙 *City:* {city}\n📡 *Carrier:* {carrier}\n✉️ *Email:* {email}"
+        # Check agar data milta hai
+        if not data or "data" not in data or not data["data"]:
+            logging.warning(f"No data found for {phone_number}")
+            return {"error": "No data found for this number."}
 
-        else:
-            logger.warning(f"No data found for {phone_number}")
-            return "❌ No data found for this number."
+        # First entry ko use karo
+        result = data["data"][0]
+        return {
+            "name": result.get("name", "Unknown"),
+            "carrier": result.get("carrier", "Unknown"),
+            "country": result.get("countryCode", "Unknown"),
+            "score": result.get("score", "N/A"),
+            "spam": result.get("spam", False)
+        }
 
     except Exception as e:
-        logger.error(f"API Error: {e}")
-        return f"❌ API Error: {str(e)}"
+        logging.error(f"Exception in search_number: {e}")
+        return {"error": str(e)}
