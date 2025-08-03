@@ -1,45 +1,33 @@
 import os
 import requests
 
-# RapidAPI key from environment
-RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
+# RapidAPI credentials
+RAPIDAPI_KEY = os.environ.get("RAPIDAPI_KEY")  # Render par env me dalna
+RAPIDAPI_HOST = "callapp.p.rapidapi.com"
 
-# Truecaller API endpoint (RapidAPI)
-BASE_URL = "https://truecaller4.p.rapidapi.com/api/v1/search"
+API_URL = "https://callapp.p.rapidapi.com/api/"
 
-# Function to get Truecaller data
-def get_truecaller_data(phone_number: str):
+def search_number(phone_number: str):
     """
-    Fetch caller details using Truecaller API via RapidAPI
-    :param phone_number: e.g., +919876543210
-    :return: dict with name, carrier, city, spam score OR None
+    CallApp API se phone number search karke data return karega
     """
     try:
+        url = f"{API_URL}v1/lookup"
+        querystring = {"number": phone_number}
         headers = {
             "x-rapidapi-key": RAPIDAPI_KEY,
-            "x-rapidapi-host": "truecaller4.p.rapidapi.com"
+            "x-rapidapi-host": RAPIDAPI_HOST
         }
-        params = {"phone": phone_number}
 
-        response = requests.get(BASE_URL, headers=headers, params=params)
+        response = requests.get(url, headers=headers, params=querystring)
         data = response.json()
 
-        # Debug print (optional)
-        print("API Response:", data)
-
-        # Parse response
-        if "data" in data and len(data["data"]) > 0:
-            info = data["data"][0]
-
-            return {
-                "name": info.get("name", "Unknown"),
-                "carrier": info.get("carrier", "Unknown"),
-                "city": info.get("city", "Unknown"),
-                "score": info.get("score", "0")
-            }
+        # Agar data mila to return karo, warna None
+        if data and "name" in data:
+            return data
         else:
             return None
 
     except Exception as e:
-        print("Error fetching Truecaller data:", e)
+        print(f"Error in search_number: {e}")
         return None
