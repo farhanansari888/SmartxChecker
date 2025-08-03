@@ -35,12 +35,28 @@ def get_truecaller_data(number: str):
             return f"❌ No data found for this number."
 
         user = data["data"][0]
-        name = user.get("name", "N/A")
-        carrier = user.get("carrier", "N/A")
-        city = user.get("city", "N/A")
-        email = user.get("email", "N/A")
 
-        result = f"📞 Name: {name}\n📱 Carrier: {carrier}\n🏙 City: {city}\n✉ Email: {email}"
+        # Extract fields
+        name = user.get("name", "N/A")
+        dob = user.get("birthday", "N/A")
+        carrier = user.get("phones", [{}])[0].get("carrier", "N/A")
+        city = user.get("addresses", [{}])[0].get("city", "N/A")
+        email = user.get("internetAddresses", [{}])[0].get("id", "N/A")
+        address = user.get("addresses", [{}])[0].get("address", "N/A")
+
+        # Fancy formatted response
+        result = (
+            "✨ 𝐒𝐦𝐚𝐫𝐭𝐱𝐂𝐡𝐞𝐜𝐤𝐞𝐫 𝐑𝐞𝐬𝐮𝐥𝐭 ✨\n\n"
+            f"• 𝐍𝐚𝐦𝐞: {name}\n"
+            f"• 𝐃𝐎𝐁: {dob}\n"
+            f"• 𝐂𝐚𝐫𝐫𝐢𝐞𝐫: {carrier}\n"
+            f"• 𝐂𝐢𝐭𝐲: {city}\n"
+            f"• 𝐄𝐦𝐚𝐢𝐥: {email}\n"
+            f"• 𝐀𝐝𝐝𝐫𝐞𝐬𝐬: {address}\n\n"
+            "──────────────\n"
+            "➤ 𝐁𝐨𝐭 𝐁𝐲: [𝐒𝐦𝐚𝐫𝐭𝐱𝐇𝐚𝐜𝐤𝐞𝐫](https://t.me/smartxhacker)"
+        )
+
         return result
 
     except Exception as e:
