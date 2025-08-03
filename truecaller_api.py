@@ -2,52 +2,56 @@ import os
 import requests
 import logging
 
-# RapidAPI Key (Truecaller16 API)
-RAPIDAPI_KEY = os.environ.get("RAPIDAPI_KEY")
-API_URL = "https://truecaller16.p.rapidapi.com/api/v1/search"
+# RapidAPI Key
+API_KEY = os.getenv("X-RapidAPI-Key")
+
+# Base URL for Truecaller16 API
+BASE_URL = "https://truecaller16.p.rapidapi.com/api/v1/search"
 
 HEADERS = {
-    "x-rapidapi-key": RAPIDAPI_KEY,
+    "x-rapidapi-key": API_KEY,
     "x-rapidapi-host": "truecaller16.p.rapidapi.com"
 }
 
-def search_number(phone_number: str, country_code: str = "IN") -> dict:
+def search_number(phone: str) -> dict:
     """
-    Lookup phone number using Truecaller16 API
+    Search phone number details using Truecaller16 API.
+    phone: 10-digit number (without +91)
     """
+
+    # Query parameters
+    params = {
+        "number": phone,
+        "code": "91"  # For India
+    }
+
     try:
-        logging.info(f"Making API request for {phone_number} with country code {country_code}")
-
-        params = {
-            "phone": phone_number,
-            "countryCode": country_code
-        }
-
-        response = requests.get(API_URL, headers=HEADERS, params=params)
+        logging.info(f"Making API request for {phone} with country code 91")
+        response = requests.get(BASE_URL, headers=HEADERS, params=params)
         logging.info(f"API Status Code: {response.status_code}")
 
         if response.status_code != 200:
             return {"error": f"API error: {response.status_code}"}
 
         data = response.json()
+        logging.info(f"Raw API Response: {data}")
 
-        # Full raw response debug
-        logging.debug(f"API Raw Response: {data}")
-
-        # Check agar data hai
-        if not data or "data" not in data or not data["data"]:
-            logging.warning(f"No data found for {phone_number}")
+        # Handle no data scenario
+        if not data or "data" not in data or len(data["data"]) == 0:
+            logging.warning(f"No data found for {phone}")
             return {"error": "No data found for this number."}
 
-        result = data["data"][0]
+        # Extract first record
+        record = data["data"][0]
+
         return {
-            "name": result.get("name", "Unknown"),
-            "carrier": result.get("carrier", "Unknown"),
-            "country": result.get("countryCode", "Unknown"),
-            "score": result.get("score", "N/A"),
-            "spam": result.get("spam", False)
+            "name": record.get("name", "Unknown"),
+            "carrier": record.get("carrier", "Unknown"),
+            "country": record.get("countryDetails", {}).get("name", "Unknown"),
+            "score": record.get("score", 0),
+            "spam": record.get("spam", False)
         }
 
     except Exception as e:
-        logging.error(f"Exception in search_number: {e}")
+        logging.error(f"Exception during API request: {e}")
         return {"error": str(e)}
