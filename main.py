@@ -103,10 +103,10 @@ async def about(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
     usage = load_usage()
-    total_limit = 6
+    total_limit = 60
     used_calls = usage["used_requests"]
     remaining_calls = total_limit - used_calls
-    percentage = math.floor((used_calls / total_limit) * 6)
+    percentage = math.floor((used_calls / total_limit) * 60)
 
     msg = (
         "📊 *𝐀𝐏𝐈 𝐐𝐮𝐨𝐭𝐚:*\n\n"
