@@ -13,7 +13,11 @@ from truecaller_api import get_truecaller_data
 # === Config ===
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 USAGE_FILE = "usage.json"
-ADMIN_ID = 6838940621  # Apna Telegram ID
+ADMIN_ID = 6838940621  
+
+# Rate limit: 3 requests per minute per user
+RATE_LIMIT = 3
+rate_limit_data = {}
 
 # === Logging Setup ===
 logging.basicConfig(
@@ -45,6 +49,19 @@ def increment_usage():
     usage = load_usage()
     usage["used_requests"] += 1
     save_usage(usage)
+
+# === Rate Limit Check ===
+def check_rate_limit(user_id):
+    now = time.time()
+    window = 60  # 1 minute
+    if user_id not in rate_limit_data:
+        rate_limit_data[user_id] = []
+    # Purge old timestamps
+    rate_limit_data[user_id] = [t for t in rate_limit_data[user_id] if now - t < window]
+    if len(rate_limit_data[user_id]) >= RATE_LIMIT:
+        return False
+    rate_limit_data[user_id].append(now)
+    return True
 
 # === Commands ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -138,7 +155,13 @@ async def set_quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # === Handle Number Messages ===
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
     number = update.message.text.strip()
+
+    # Rate limit check
+    if not check_rate_limit(user_id):
+        await update.message.reply_text("❌ Rate limit exceeded! Try again after 1 minute.")
+        return
 
     if not number.isdigit():
         await update.message.reply_text("❌ Please send only digits of the phone number.")
