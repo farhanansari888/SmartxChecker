@@ -60,6 +60,30 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(msg, parse_mode="Markdown")
 
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = (
+        "🛠 *𝐀𝐯𝐚𝐢𝐥𝐚𝐛𝐥𝐞 𝐂𝐨𝐦𝐦𝐚𝐧𝐝𝐬:*\n\n"
+        "/start - 𝐒𝐭𝐚𝐫𝐭 𝐭𝐡𝐞 𝐛𝐨𝐭\n"
+        "/help - 𝐒𝐡𝐨𝐰 𝐭𝐡𝐢𝐬 𝐡𝐞𝐥𝐩 𝐦𝐞𝐬𝐬𝐚𝐠𝐞\n"
+        "/about - 𝐀𝐛𝐨𝐮𝐭 𝐭𝐡𝐢𝐬 𝐛𝐨𝐭\n"
+        "/ping - 𝐂𝐡𝐞𝐜𝐤 𝐛𝐨𝐭 𝐫𝐞𝐬𝐩𝐨𝐧𝐬𝐞 𝐬𝐩𝐞𝐞𝐝\n"
+        "/status - 𝐂𝐡𝐞𝐜𝐤 𝐛𝐨𝐭 𝐬𝐲𝐬𝐭𝐞𝐦 𝐬𝐭𝐚𝐭𝐮𝐬\n"
+        "/quota - 𝐂𝐡𝐞𝐜𝐤 𝐀𝐏𝐈 𝐮𝐬𝐚𝐠𝐞\n"
+        "/setquota - 𝐒𝐞𝐭 𝐐𝐮𝐨𝐭𝐚 (𝐀𝐝𝐦𝐢𝐧)\n\n"
+        "*𝐇𝐨𝐰 𝐭𝐨 𝐮𝐬𝐞?*\n𝐉𝐮𝐬𝐭 𝐬𝐞𝐧𝐝 𝐚 𝐩𝐡𝐨𝐧𝐞 𝐧𝐮𝐦𝐛𝐞𝐫 𝐢𝐧 𝐝𝐢𝐠𝐢𝐭𝐬 𝐨𝐧𝐥𝐲!"
+    )
+    await update.message.reply_text(msg, parse_mode="Markdown")
+
+async def about(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = (
+        "🤖 *𝐀𝐛𝐨𝐮𝐭 𝐁𝐨𝐭:*\n\n"
+        "𝐒𝐦𝐚𝐫𝐭𝐱𝐂𝐡𝐞𝐜𝐤𝐞𝐫 𝐢𝐬 𝐚 𝐓𝐞𝐥𝐞𝐠𝐫𝐚𝐦 𝐛𝐨𝐭 𝐭𝐡𝐚𝐭 𝐟𝐞𝐭𝐜𝐡𝐞𝐬 𝐫𝐞𝐚𝐥-𝐭𝐢𝐦𝐞 𝐝𝐞𝐭𝐚𝐢𝐥𝐬 𝐟𝐨𝐫 𝐈𝐧𝐝𝐢𝐚𝐧 𝐩𝐡𝐨𝐧𝐞 𝐧𝐮𝐦𝐛𝐞𝐫𝐬.\n\n"
+        "➤ 𝐁𝐨𝐭 𝐁𝐲: [𝐒𝐦𝐚𝐫𝐭𝐱𝐇𝐚𝐜𝐤𝐞𝐫](https://t.me/smartxhacker)\n"
+        "➤ 𝐋𝐚𝐧𝐠𝐮𝐚𝐠𝐞: 𝐏𝐲𝐭𝐡𝐨𝐧 𝟑\n"
+        "➤ 𝐇𝐨𝐬𝐭𝐢𝐧𝐠: 𝐑𝐞𝐧𝐝𝐞𝐫 𝐂𝐥𝐨𝐮𝐝"
+    )
+    await update.message.reply_text(msg, parse_mode="Markdown")
+
 async def quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
     usage = load_usage()
     total_limit = 100
@@ -78,17 +102,24 @@ async def quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
     start_time = time.time()
-    msg = await update.message.reply_text(" Pinging...")
+    msg = await update.message.reply_text("⏳ 𝐏𝐢𝐧𝐠𝐢𝐧𝐠...")
     latency = round((time.time() - start_time) * 1000)
     await msg.edit_text(f" Ping! `{latency}ms`", parse_mode="Markdown")
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cpu = psutil.cpu_percent()
-    mem = psutil.virtual_memory().percent
+    ram = psutil.virtual_memory().percent
+    disk = psutil.disk_usage('/').percent
+
     msg = (
-        "📡 *𝐁𝐨𝐭 𝐒𝐭𝐚𝐭𝐮𝐬:*\n\n"
-        f"𝐂𝐏𝐔: {cpu}%\n"
-        f"𝐌𝐞𝐦𝐨𝐫𝐲: {mem}%"
+        "📊 *𝐁𝐨𝐭 𝐒𝐭𝐚𝐭𝐮𝐬:*\n\n"
+        f"• **𝐂𝐏𝐔 𝐔𝐬𝐚𝐠𝐞:** {cpu}% ⚙️\n"
+        f"• **𝐑𝐀𝐌 𝐔𝐬𝐚𝐠𝐞:** {ram}% 🧠\n"
+        f"• **𝐃𝐢𝐬𝐤 𝐔𝐬𝐚𝐠𝐞:** {disk}% 💾\n\n"
+        "• 𝐎𝐧𝐥𝐢𝐧𝐞: ✅\n"
+        "• 𝐅𝐞𝐚𝐭𝐮𝐫𝐞𝐬: 𝐂𝐡𝐞𝐜𝐤 𝐃𝐞𝐭𝐚𝐢𝐥𝐬 𝐎𝐟 𝐀𝐧𝐲 𝐍𝐮𝐦𝐛𝐞𝐫 𝐈𝐧𝐬𝐭𝐚𝐧𝐭𝐥𝐲!\n"
+        "• 𝐂𝐨𝐦𝐦𝐚𝐧𝐝𝐬: /start, /help, /about, /ping, /status, /quota, /setquota\n\n"
+        "➤ 𝐁𝐨𝐭 𝐁𝐲: [𝐒𝐦𝐚𝐫𝐭𝐱𝐇𝐚𝐜𝐤𝐞𝐫](https://t.me/smartxhacker)"
     )
     await update.message.reply_text(msg, parse_mode="Markdown")
 
@@ -152,6 +183,8 @@ def main():
     # Commands
     commands = [
         BotCommand("start", "Start the bot"),
+        BotCommand("help", "Show help menu"),
+        BotCommand("about", "About the bot"),
         BotCommand("quota", "Check API quota"),
         BotCommand("ping", "Check bot latency"),
         BotCommand("status", "Check bot system status"),
@@ -161,6 +194,8 @@ def main():
 
     # Handlers
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("about", about))
     application.add_handler(CommandHandler("quota", quota))
     application.add_handler(CommandHandler("ping", ping))
     application.add_handler(CommandHandler("status", status))
