@@ -57,7 +57,7 @@ def get_truecaller_data(number: str):
                 continue  # try next key
 
             if response.status_code == 500:
-                return "❌ Server error from Truecaller API. Please try again later."
+                return "❌ Server error from API. Please try again later."
 
             if response.status_code != 200:
                 return "❌ Unknown API error occurred. Please contact admin."
@@ -71,13 +71,18 @@ def get_truecaller_data(number: str):
 
             user = data["data"][0]
 
-            # Extract fields
+            # Safe extraction (avoid list index errors)
             name = user.get("name", "N/A")
             dob = user.get("birthday", "N/A")
-            carrier = user.get("phones", [{}])[0].get("carrier", "N/A")
-            city = user.get("addresses", [{}])[0].get("city", "N/A")
-            email = user.get("internetAddresses", [{}])[0].get("id", "N/A")
-            address = user.get("addresses", [{}])[0].get("address", "N/A")
+
+            phones = user.get("phones", [])
+            addresses = user.get("addresses", [])
+            emails = user.get("internetAddresses", [])
+
+            carrier = phones[0].get("carrier", "N/A") if phones else "N/A"
+            city = addresses[0].get("city", "N/A") if addresses else "N/A"
+            email = emails[0].get("id", "N/A") if emails else "N/A"
+            address = addresses[0].get("address", "N/A") if addresses else "N/A"
 
             # Fancy formatted response
             result = (
