@@ -1,33 +1,35 @@
-import os
 import requests
+import os
 
-# RapidAPI credentials
-RAPIDAPI_KEY = os.environ.get("RAPIDAPI_KEY")  # Render par env me dalna
-RAPIDAPI_HOST = "callapp.p.rapidapi.com"
+RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
 
-API_URL = "https://callapp.p.rapidapi.com/api/"
-
-def search_number(phone_number: str):
+def lookup_number(phone_number, country_code="IN"):
     """
-    CallApp API se phone number search karke data return karega
+    Truecaller16 API se number lookup karega
     """
+    url = "https://truecaller16.p.rapidapi.com/api/v1/search"
+    querystring = {"number": phone_number, "countryCode": country_code}
+
+    headers = {
+        "x-rapidapi-key": RAPIDAPI_KEY,
+        "x-rapidapi-host": "truecaller16.p.rapidapi.com"
+    }
+
     try:
-        url = f"{API_URL}v1/lookup"
-        querystring = {"number": phone_number}
-        headers = {
-            "x-rapidapi-key": RAPIDAPI_KEY,
-            "x-rapidapi-host": RAPIDAPI_HOST
-        }
-
-        response = requests.get(url, headers=headers, params=querystring)
+        response = requests.get(url, headers=headers, params=querystring, timeout=10)
         data = response.json()
 
-        # Agar data mila to return karo, warna None
-        if data and "name" in data:
-            return data
+        if response.status_code == 200 and data.get("data"):
+            result = data["data"][0]
+            name = result.get("name", "N/A")
+            carrier = result.get("carrier", "Unknown")
+            city = result.get("city", "Unknown")
+            email = result.get("email", "Not available")
+
+            return f"📞 *Name:* {name}\n🏙 *City:* {city}\n📡 *Carrier:* {carrier}\n✉️ *Email:* {email}"
+
         else:
-            return None
+            return "❌ No data found for this number."
 
     except Exception as e:
-        print(f"Error in search_number: {e}")
-        return None
+        return f"❌ API Error: {str(e)}"
