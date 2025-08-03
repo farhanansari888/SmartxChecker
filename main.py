@@ -8,7 +8,7 @@ import psutil
 from flask import Flask
 from telegram import Update, BotCommand
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
-from truecaller_api import get_number_details
+from truecaller_api import get_truecaller_data
 
 # === Config ===
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
@@ -99,7 +99,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"Received number: {number} from user {update.effective_user.id}")
     await update.message.reply_text(f"⏳ Fetching details for `{number}` ...", parse_mode="Markdown")
 
-    result = get_number_details(number)
+    result = get_truecaller_data(number)
 
     # Agar result mila to usage increment karo
     if "No data" not in result and "Error" not in result:
